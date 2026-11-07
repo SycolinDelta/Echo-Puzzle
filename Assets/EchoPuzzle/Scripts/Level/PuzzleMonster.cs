@@ -1285,6 +1285,45 @@ namespace EchoPuzzle
         /// <summary>【地牢模式】有没有捕捉到过玩家。</summary>
         public bool DungeonHasPlayerPos { get; private set; }
 
+        // ---- 地牢模式 · 行为接管 ----
+        //
+        //   ★ DungeonEnemy（Scripts/Dungeon/DungeonEnemy.cs）挂在本物体上时接管移动：
+        //     检测到玩家后随机运动 + 定时开火，而不是像探秘模式那样冲向玩家。
+        //   ★ 探秘模式没有 DungeonEnemy，下面这些字段/方法永远不会被用到。
+
+        [Header("地牢模式 · 行为接管")]
+        [Tooltip("true = 移动由 DungeonEnemy 接管（随机巡逻 / 寻路到可命中点）。\n探秘模式永远为 false")]
+        [System.NonSerialized] public bool DungeonMoveControlled;
+
+        /// <summary>缓存的地牢行为组件（没有则每帧重查一次，避免 AddComponent 时序问题）。</summary>
+        private Dungeon.DungeonEnemy m_DungeonEnemy;
+
+        /// <summary>
+        /// 【地牢模式】由 DungeonEnemy 设置巡逻 / 射击目标点。
+        /// 写入 m_Target / m_StopPoint，后续 MoveTowardTarget 会朝它走（NavMesh 寻路）。
+        /// </summary>
+        public void DungeonSetMoveTarget(Vector3 pos)
+        {
+            m_Target             = pos;
+            m_StopPoint          = pos;
+            m_TargetBirthTime    = Time.timeSinceLevelLoad;
+            m_LastSonarBirthTime = m_TargetBirthTime;
+            m_HasTarget          = true;
+            m_TargetDirty        = true;
+        }
+
+        /// <summary>【地牢模式】清除移动目标（原地停下，重力 / 悬浮照常）。</summary>
+        public void DungeonClearMoveTarget()
+        {
+            m_HasTarget = false;
+
+            if (m_Agent != null && m_Agent.isActiveAndEnabled &&
+                m_Agent.isOnNavMesh && m_Agent.hasPath)
+            {
+                m_Agent.ResetPath();
+            }
+        }
+
         /// <summary>
         /// 【地牢模式】只做重力 / 悬浮，**不做水平移动**。
         ///
@@ -1354,16 +1393,22 @@ namespace EchoPuzzle
                 DungeonLastPlayerPos = m_Target;
             }
 
-            // ---- 3) 追击玩家（但**不击杀**）----
+            // ---- 3) 移动（地牢模式）----
             //
-            //   ★ 现在恢复成"会追玩家"，方便测试移动效果。
+            //   ★ 挂了 DungeonEnemy 时由它接管：检测到玩家后随机运动，
+            //     看不到玩家时寻路到"能直接命中玩家"的位置（见 Dungeon/PuzzleEnemy 交接注释）。
+            //   ★ 场上没挂 DungeonEnemy 的纯测试怪保持旧的追击行为。
             //
-            //   追的方式和探秘模式一样：
-            //     · 捕捉到声源后 m_Target / m_StopPoint 已经被填好
-            //     · MoveTowardTarget 朝 m_StopPoint 走（NavMesh 寻路）
-            //
-            //   ★ 但要**不击杀** —— 所以下面那个 BodyTouchesPlayer() 的分支
-            //     在地牢模式永远不会执行（这个方法里根本没有击杀判定）。
+            //   ★ 无论哪种，都不击杀 —— 本方法里没有击杀判定，
+            //     BodyTouchesPlayer() 只在探秘分支调用。
+            if (m_DungeonEnemy == null)
+                m_DungeonEnemy = GetComponent<Dungeon.DungeonEnemy>();
+
+            if (m_DungeonEnemy != null)
+            {
+                m_DungeonEnemy.PatrolTick(now);
+            }
+
             MoveTowardTarget();
 
             // ---- 4) 随机发光带 ----
@@ -1386,7 +1431,13 @@ namespace EchoPuzzle
                 EmitBurst();
             }
 
-            // ---- 5) 推进 / 收尾已有的光带 ----
+            // ---- 5) 开火（DungeonEnemy：检测到玩家且视线通畅时，定时发射数颗子弹）----
+            if (m_DungeonEnemy != null)
+            {
+                m_DungeonEnemy.CombatTick(now);
+            }
+
+            // ---- 6) 推进 / 收尾已有的光带 ----
             StepBeams(now);
         }
 
@@ -2546,7 +2597,9 @@ namespace EchoPuzzle
 
                 // ★ captured == 1：直接朝玩家当前位置走，不读 m_StopPoint。
                 //   这样无论别处怎么改 m_StopPoint，追逐方向都只由玩家决定。
-                Vector3 flatGo  = IsCaptured && m_Player != null
+                //   ★ 地牢模式例外：移动由 DungeonEnemy 接管（随机巡逻 / 射击位），
+                //     必须读 m_StopPoint，不能直追玩家 —— 否则接管失效。
+                Vector3 flatGo  = IsCaptured && m_Player != null && !DungeonMoveControlled
                                 ? new Vector3(m_Player.transform.position.x, 0f, m_Player.transform.position.z)
                                 : new Vector3(m_StopPoint.x, 0f, m_StopPoint.z);
 

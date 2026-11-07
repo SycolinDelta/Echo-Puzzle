@@ -193,6 +193,17 @@ namespace EchoPuzzle
                 made = true;
             }
 
+            // ★★ 地牢模式专用：怪物潮管理器 ★★
+            //   订阅 MonsterZone.OnMonsterWave：玩家进怪物房后按波刷怪，
+            //   全灭后解除封锁。必须在 MonsterZone 之后创建（订阅其事件）。
+            if (GameUI.IsDungeonMode &&
+                Object.FindObjectOfType<EchoPuzzle.Dungeon.MonsterWaveManager>() == null)
+            {
+                new GameObject("MonsterWaveManager")
+                    .AddComponent<EchoPuzzle.Dungeon.MonsterWaveManager>();
+                made = true;
+            }
+
             if (made)
                 Debug.Log("[EchoPuzzle] 已自动补上 GameUI / ZoneTrigger / MarkerSystem / " +
                           "FootprintSystem / AudioSystem / BatterySystem / StoneSystem。\n" +

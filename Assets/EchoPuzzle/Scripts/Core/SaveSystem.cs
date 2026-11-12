@@ -156,9 +156,6 @@ namespace EchoPuzzle
             try
             {
                 File.WriteAllText(SavePath, JsonUtility.ToJson(data, true));
-                Debug.Log($"[EchoPuzzle] 已保存到 {SavePath}" +
-                          $"（玩家 + {data.markerUsed.Count} 个标记槽 + " +
-                          $"{data.world.objects.Count} 个物体状态）");
                 return true;
             }
             catch (System.Exception e)
@@ -249,8 +246,6 @@ namespace EchoPuzzle
             // 计时从存档时刻恢复
             LoadedElapsed = data.elapsed;
 
-            Debug.Log($"[EchoPuzzle] 已读档（玩家 + {data.markerUsed.Count} 个标记槽 + " +
-                      $"{data.world.objects.Count} 个物体状态，计时 {data.elapsed:0.00}s）");
             return true;
         }
 

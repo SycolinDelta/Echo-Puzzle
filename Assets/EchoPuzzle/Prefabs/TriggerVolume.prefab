@@ -71,12 +71,18 @@ MonoBehaviour:
   spawnObjects: []
   removeObjects: []
   destroySelfAfterTrigger: 1
+  chargeAmount: 1
+  activateMonsters: []
+  useSpecialSound: 0
+  specialSounds: []
+  requirePassword: 0
+  password: 1234
   overrideWidth: 0
   waveWidth: 0.22
   overrideAlpha: 1
   waveAlpha: 1
   overrideColor: 1
-  waveColor: {r: 0.35, g: 0.85, b: 1, a: 1}
+  waveColor: {r: 1, g: 0, b: 0, a: 1}
   emitSonarOnTrigger: 1
   sonar:
     rayCount90: 240
@@ -93,7 +99,7 @@ MonoBehaviour:
     bounceFalloff: 1
     bounceLifeLoss: 0.35
     lifetime: 10
-    tailLinger: 20
+    tailLinger: 11
     intensity: 1
     holdAlpha: 1
     color: {r: 1, g: 0.7254902, b: 0, a: 1}

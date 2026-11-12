@@ -124,6 +124,16 @@ MonoBehaviour:
   raycastMask:
     serializedVersion: 2
     m_Bits: 259
+  dungeonEmitInterval: 0.2
+  dungeonRaysPerBurst: 6
+  dungeonTrailInitialAlpha: 0.85
+  dungeonTrailWidth: 0.1
+  dungeonTrailColor: {r: 1, g: 0, b: 0, a: 1}
+  dungeonTrailBodyFadeSpeed: 1.2
+  dungeonTrailHeadFadeSpeed: 3.5
+  dungeonTrailMaxLength: 2
+  dungeonTrailSpacing: 0.35
+  dungeonTrailSpeed: 8.8
   emitIntervalFrightened: 0.1
   trailMaxLengthFrightened: 4
   frightenedDuration: 3
@@ -141,6 +151,8 @@ MonoBehaviour:
   facingArrowColor: {r: 1, g: 0, b: 0, a: 1}
   facingArrowLength: 1.5
   bodyMaterial: {fileID: 0}
+  dungeonMaxHealth: 24
+  dungeonHideOnDeath: 1
   frightenedDeathDelay: 2
   anger: 0
   approaching: 0
@@ -149,6 +161,7 @@ MonoBehaviour:
   specialMoveRadius: 5
   minSpecialMoveDistance: 1
   keepChasing: 0
+  captured: 0
   minStopSeparation: 0.7
   emitSonarOnRemove: 1
   useCustomRemoveSonar: 0
@@ -167,10 +180,31 @@ MonoBehaviour:
     bounceFalloff: 1
     bounceLifeLoss: 0.35
     lifetime: 10
-    tailLinger: 20
+    tailLinger: 11
     intensity: 1
     holdAlpha: 1
     color: {r: 1, g: 0.7254902, b: 0, a: 1}
+    width: 0
+  dungeonEmitDeathSonar: 1
+  dungeonDeathSonar:
+    rayCount90: 120
+    rayCount30: 0
+    rayCount60: 0
+    diffuseCount15: 0
+    diffuseCount45: 0
+    diffuseCount75: 0
+    hemisphereCount: 0
+    range: 6
+    speed: 12
+    trailSpacing: 0.3
+    maxBounces: 6
+    bounceFalloff: 1
+    bounceLifeLoss: 0.35
+    lifetime: 0.2
+    tailLinger: 2
+    intensity: 1
+    holdAlpha: 1
+    color: {r: 1, g: 0, b: 0, a: 1}
     width: 0
   showGizmo: 1
   gizmoColor: {r: 1, g: 0.15, b: 0.15, a: 1}

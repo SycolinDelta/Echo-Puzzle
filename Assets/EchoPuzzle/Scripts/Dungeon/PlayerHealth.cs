@@ -47,6 +47,20 @@ namespace EchoPuzzle.Dungeon
         [Tooltip("受伤后多久内免疫再次伤害（秒）。0 = 不免疫")]
         [Min(0f)] public float invincibleDuration = 0.5f;
 
+        [Header("护盾")]
+        [Tooltip("护盾上限（需求：四点）。\n\n" +
+                 "★ 护盾挡在血量前面：受伤先扣护盾，护盾扣完才扣血。")]
+        [Min(0)] public int maxShield = 4;
+
+        [Tooltip("开局护盾。留 -1 表示用 Max Shield")]
+        public int startingShield = -1;
+
+        [Tooltip("受伤后多久没再受伤才开始回盾（秒）。需求：4 秒")]
+        [Min(0f)] public float shieldRegenDelay = 4f;
+
+        [Tooltip("回盾速度（每秒回几个）。需求：1 点 / 秒")]
+        [Min(0.01f)] public float shieldRegenPerSecond = 1f;
+
         [Header("死亡表现")]
         [Tooltip("死亡时在脚下释放光带。取消勾选则只播音效 + 进死亡界面。")]
         public bool emitDeathSonar = true;
@@ -60,6 +74,15 @@ namespace EchoPuzzle.Dungeon
 
         /// <summary>当前生命值。</summary>
         public int Current { get; private set; }
+
+        /// <summary>当前护盾值（0..maxShield）。</summary>
+        public int Shield { get; private set; }
+
+        /// <summary>护盾上限（至少 0）。</summary>
+        public int MaxShield => Mathf.Max(0, maxShield);
+
+        /// <summary>护盾变化时触发（当前护盾、最大护盾、距离回盾还剩几秒）。给 HUD 用。</summary>
+        public event System.Action<int, int> ShieldChanged;
 
         /// <summary>已经死了吗。</summary>
         public bool IsDead => Current <= 0;
@@ -79,6 +102,14 @@ namespace EchoPuzzle.Dungeon
         private float           m_InvincibleUntil;
         private bool            m_DeathHandled;
 
+        /// <summary>回盾用的累加器：攒够 1 点才真正 +1（这样 1/秒 的节奏才匀）。</summary>
+        private float m_ShieldRegenAccum;
+
+        /// <summary>下一次可以开始回盾的时刻（受伤后 4 秒）。</summary>
+        private float m_ShieldRegenFrom;
+
+        private float Now => Time.timeSinceLevelLoad;
+
         // ------------------------------------------------------------------ 生命周期
 
         private void Awake()
@@ -91,7 +122,12 @@ namespace EchoPuzzle.Dungeon
                     ? Mathf.Clamp(startingHealth, 0, maxHealth)
                     : maxHealth;
 
+            Shield = startingShield >= 0
+                    ? Mathf.Clamp(startingShield, 0, MaxShield)
+                    : MaxShield;
+
             HealthChanged?.Invoke(Current, maxHealth);
+            ShieldChanged?.Invoke(Shield, MaxShield);
         }
 
         private void Start()
@@ -101,6 +137,47 @@ namespace EchoPuzzle.Dungeon
 
             // Awake 时 HUD 可能还没建好，这里再推一次
             HealthChanged?.Invoke(Current, maxHealth);
+            ShieldChanged?.Invoke(Shield, MaxShield);
+        }
+
+        /// <summary>
+        /// 护盾自动恢复。
+        ///
+        /// ★ 需求："受伤后，如果玩家四秒内没有再次受到伤害，
+        ///         则护盾会以一秒一点的速度恢复。"
+        ///
+        ///   实现：受伤时把 m_ShieldRegenFrom 设成 now + 4s，
+        ///        过了这个时刻才用累加器按 1 点/秒 往上补。
+        /// </summary>
+        private void Update()
+        {
+            if (!IsEnabledHere) return;
+
+            // 死人、满盾、还没到回盾时刻 —— 都不用算
+            if (IsDeadOrDone()) return;
+            if (Shield >= MaxShield)
+            {
+                m_ShieldRegenAccum = 0f;
+                return;
+            }
+
+            // 地牢模式只在真正进行中回盾（菜单 / 暂停 / 结算不回）
+            if (GameUI.IsDungeonMode && GameUI.Current != GameState.Playing) return;
+
+            float now = Time.timeSinceLevelLoad;
+
+            // 受伤后 4 秒内不回
+            if (now < m_ShieldRegenFrom) return;
+
+            m_ShieldRegenAccum += Mathf.Max(0.01f, shieldRegenPerSecond) * Time.deltaTime;
+
+            if (m_ShieldRegenAccum >= 1f)
+            {
+                int whole = Mathf.FloorToInt(m_ShieldRegenAccum);
+                m_ShieldRegenAccum -= whole;
+
+                AddShield(whole);
+            }
         }
 
         // ------------------------------------------------------------------ 对外接口
@@ -123,7 +200,24 @@ namespace EchoPuzzle.Dungeon
 
             m_InvincibleUntil = Time.timeSinceLevelLoad + Mathf.Max(0f, invincibleDuration);
 
-            Current = Mathf.Max(0, Current - amount);
+            // ★★ 受伤 -> 重置回盾倒计时（4 秒）★★
+            m_ShieldRegenFrom  = Time.timeSinceLevelLoad + Mathf.Max(0f, shieldRegenDelay);
+            m_ShieldRegenAccum = 0f;
+
+            // ★★ 先扣护盾，护盾扣完才扣血 ★★
+            int remain = amount;
+
+            if (Shield > 0)
+            {
+                int absorb = Mathf.Min(Shield, remain);
+                Shield  -= absorb;
+                remain  -= absorb;
+                ShieldChanged?.Invoke(Shield, MaxShield);
+            }
+
+            if (remain <= 0) return true;      // 全被护盾挡下了，血量不变
+
+            Current = Mathf.Max(0, Current - remain);
 
             HealthChanged?.Invoke(Current, maxHealth);
 
@@ -131,6 +225,27 @@ namespace EchoPuzzle.Dungeon
 
             return true;
         }
+
+        /// <summary>
+        /// 让玩家无敌一段时间（**不产生**默认的受击无敌，也不扣血）。
+        ///
+        /// ★ 给「闪避」用：闪避的 0.5 秒无敌帧直接走这套，
+        ///   避免和 invincibleDuration（受击后的常规无敌）互相覆盖。
+        /// </summary>
+        public void GrantInvincibility(float seconds)
+        {
+            if (!IsEnabledHere) return;
+            if (IsDeadOrDone()) return;
+            if (seconds <= 0f) return;
+
+            float until = Time.timeSinceLevelLoad + seconds;
+
+            // 只延长、不缩短
+            if (until > m_InvincibleUntil) m_InvincibleUntil = until;
+        }
+
+        /// <summary>当前是否处于无敌（给 HUD / 闪避视觉判断用）。</summary>
+        public bool IsInvincible => Time.timeSinceLevelLoad < m_InvincibleUntil;
 
         /// <summary>回血（不会超过最大值）。</summary>
         public void Heal(int amount)
@@ -145,6 +260,31 @@ namespace EchoPuzzle.Dungeon
             HealthChanged?.Invoke(Current, maxHealth);
         }
 
+        /// <summary>
+        /// 加护盾（不会超过上限）。
+        ///
+        /// ★ 给自动回盾用：攒够 1 点就调一次。
+        /// </summary>
+        public void AddShield(int amount)
+        {
+            if (!IsEnabledHere) return;
+            if (amount <= 0) return;
+            if (Shield >= MaxShield) return;
+
+            SetShield(Shield + amount);
+        }
+
+        /// <summary>直接设成某个值（读档 / 重开时用）。</summary>
+        public void SetShield(int value)
+        {
+            int v = Mathf.Clamp(value, 0, MaxShield);
+
+            if (v == Shield) return;
+
+            Shield = v;
+            ShieldChanged?.Invoke(Shield, MaxShield);
+        }
+
         /// <summary>直接设成某个值（读档 / 重开时用）。</summary>
         public void SetHealth(int value)
         {
@@ -153,17 +293,24 @@ namespace EchoPuzzle.Dungeon
             HealthChanged?.Invoke(Current, maxHealth);
         }
 
-        /// <summary>满血并清掉死亡标记（重开时用）。</summary>
+        /// <summary>满血满盾并清掉死亡标记（重开时用）。</summary>
         public void ResetHealth()
         {
-            m_DeathHandled    = false;
-            m_InvincibleUntil = 0f;
+            m_DeathHandled     = false;
+            m_InvincibleUntil  = 0f;
+            m_ShieldRegenFrom  = 0f;
+            m_ShieldRegenAccum = 0f;
 
             Current = startingHealth >= 0
                     ? Mathf.Clamp(startingHealth, 0, maxHealth)
                     : maxHealth;
 
+            Shield = startingShield >= 0
+                    ? Mathf.Clamp(startingShield, 0, MaxShield)
+                    : MaxShield;
+
             HealthChanged?.Invoke(Current, maxHealth);
+            ShieldChanged?.Invoke(Shield, MaxShield);
         }
 
         /// <summary>已经死过（死亡表现已触发）或者当前血量为 0。</summary>
@@ -188,7 +335,6 @@ namespace EchoPuzzle.Dungeon
             if (m_DeathHandled) return;
             m_DeathHandled = true;
 
-            Debug.Log("[地牢] 玩家生命值归零，触发死亡。");
 
             // ---- 1) 光带 ----
             if (emitDeathSonar)

@@ -103,7 +103,6 @@ namespace EchoPuzzle
             var go = new GameObject(RootName);
             go.AddComponent<EchoBootstrap>();
 
-            Debug.Log("[EchoPuzzle] 已自动生成关卡并进入首页。");
         }
 
         /// <summary>
@@ -112,12 +111,10 @@ namespace EchoPuzzle
         /// </summary>
         private static void EnsureUISystems()
         {
-            bool made = false;
 
             if (Object.FindObjectOfType<GameUI>() == null)
             {
                 new GameObject("GameUI").AddComponent<GameUI>();
-                made = true;
             }
 
             // 判定系统只在场景里确实有玩家时才建，免得空场景里每帧白跑
@@ -125,42 +122,36 @@ namespace EchoPuzzle
                 Object.FindObjectOfType<PlayerController>() != null)
             {
                 new GameObject("ZoneTrigger").AddComponent<ZoneTrigger>();
-                made = true;
             }
 
             // 标记系统：按数字键 1~5 在脚下放光点。玩家 Prefab 里已经带了就不重复建
             if (Object.FindObjectOfType<MarkerSystem>() == null)
             {
                 new GameObject("MarkerSystem").AddComponent<MarkerSystem>();
-                made = true;
             }
 
             // 脚印系统：每次释放声波在脚下打一个鞋印
             if (Object.FindObjectOfType<FootprintSystem>() == null)
             {
                 new GameObject("FootprintSystem").AddComponent<FootprintSystem>();
-                made = true;
             }
 
             // 音效系统：全局单例，靠 Resources 加载 AudioPack 下的音频
             if (Object.FindObjectOfType<AudioSystem>() == null)
             {
                 new GameObject("AudioSystem").AddComponent<AudioSystem>();
-                made = true;
             }
 
             // 电池系统：左上角三个圆点，控制光刃能否使用
             if (Object.FindObjectOfType<BatterySystem>() == null)
             {
                 new GameObject("BatterySystem").AddComponent<BatterySystem>();
-                made = true;
             }
 
             // 石头系统：左上角（电池下方）三个方块，控制投石次数
             if (Object.FindObjectOfType<StoneSystem>() == null)
             {
                 new GameObject("StoneSystem").AddComponent<StoneSystem>();
-                made = true;
             }
 
             // ★★ 地牢模式专用：左上角爱心生命值 HUD ★★
@@ -170,7 +161,6 @@ namespace EchoPuzzle
             {
                 new GameObject("DungeonHUD")
                     .AddComponent<EchoPuzzle.Dungeon.DungeonHUD>();
-                made = true;
             }
 
             // ★★ 地牢模式专用：怪物区（数字 3 的格子）★★
@@ -180,7 +170,6 @@ namespace EchoPuzzle
             {
                 new GameObject("MonsterZone")
                     .AddComponent<EchoPuzzle.Dungeon.MonsterZone>();
-                made = true;
             }
 
             // ★★ 地牢模式专用：地图生成器 ★★
@@ -190,13 +179,20 @@ namespace EchoPuzzle
             {
                 new GameObject("DungeonMapGenerator")
                     .AddComponent<EchoPuzzle.Dungeon.DungeonMapGenerator>();
-                made = true;
             }
 
-            if (made)
-                Debug.Log("[EchoPuzzle] 已自动补上 GameUI / ZoneTrigger / MarkerSystem / " +
-                          "FootprintSystem / AudioSystem / BatterySystem / StoneSystem。\n" +
-                          "（关卡几何与玩家由你手工摆放在场景里）");
+            // ★★ 地牢模式专用：怪物潮管理器 ★★
+            //   订阅 MonsterZone.OnMonsterWave，在怪物房里按波刷怪
+            //   （怪物由它的 prefab 实例化，自带 DungeonEnemy 远程开火）。
+            //   DefaultExecutionOrder(-80)，会在 MonsterZone(-90) 之后、
+            //   地图生成器(-100... 之前) 之前就位，订阅一定比广播早。
+            if (GameUI.IsDungeonMode &&
+                Object.FindObjectOfType<EchoPuzzle.Dungeon.MonsterWaveManager>() == null)
+            {
+                new GameObject("MonsterWaveManager")
+                    .AddComponent<EchoPuzzle.Dungeon.MonsterWaveManager>();
+            }
+
         }
 
         private static void DisableLegacyObjects()
@@ -211,8 +207,6 @@ namespace EchoPuzzle
                 if (found.transform.parent != null) continue;
 
                 found.SetActive(false);
-                Debug.Log($"[EchoPuzzle] 已停用场景里遗留的旧测试物件「{name}」。" +
-                          "（EchoRuntimeBootstrap.DisableLegacyGeometry 可关掉这个行为）");
             }
         }
     }

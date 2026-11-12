@@ -122,8 +122,15 @@ namespace EchoPuzzle
                 // 这类运行时自动生成的辅助物体不记录
                 if (IsRuntimeOnly(go)) continue;
 
+                bool isChild = go.transform.parent != null;
+
                 Hide h = go.GetComponent<Hide>();
                 Vector3 p = go.transform.position;
+
+                // ★ 子物体不用记 hiding —— 它的显隐完全由父物体 + 各自系统的
+                //   状态机决定，还原时也会被跳过（见 Restore 里的说明）。
+                //   这里统一记成"可见"，避免存一堆没用的 false。
+                int hidingToRecord = isChild ? 0 : (h != null ? h.hiding : 0);
 
                 snap.objects.Add(new ObjectState
                 {
@@ -131,12 +138,12 @@ namespace EchoPuzzle
                     x         = p.x,
                     y         = p.y,
                     z         = p.z,
-                    hiding    = h != null ? h.hiding : 0,
+                    hiding    = hidingToRecord,
                     hasHide   = h != null,
 
                     // ★ 只有根物体的世界坐标才是"它的位置"；
                     //   子物体（Player/Body 之类）的坐标由父物体决定，不能单独还原。
-                    hasParent = go.transform.parent != null,
+                    hasParent = isChild,
                 });
             }
 
@@ -156,7 +163,6 @@ namespace EchoPuzzle
                 });
             }
 
-            Debug.Log($"[EchoPuzzle] 世界快照：{snap.objects.Count} 个物体，{snap.monsters.Count} 个怪物。");
 
             return snap;
         }
@@ -218,6 +224,19 @@ namespace EchoPuzzle
                 ObjectState st = snap.objects[i];
                 if (st == null) continue;
                 if (!byPath.TryGetValue(st.path, out GameObject go)) continue;
+
+                // ★★ 子物体的显隐**跳过** ★★
+                //
+                //   子物体的 activeSelf 是由父物体 + 各自系统的状态机决定的
+                //   （比如 DungeonWeaponModel/Barrel 的开关完全跟着父物体的
+                //    SetActive 走）。如果这里给子物体单独 SetActive(true)，
+                //   就会把它从父物体的隐藏里"救"出来，表现为：
+                //     · 父物体明明关着，零件却单独显示
+                //     · 而且不再跟随父物体移动（父物体的 Transform 一动不动）
+                //   —— 这正是"重新开始后武器建模一直显示且不跟随"的原因。
+                //
+                //   根物体的显隐照常还原（那是真的游戏状态）。
+                if (st.hasParent) continue;
 
                 Hide h = go.GetComponent<Hide>();
 
@@ -294,8 +313,6 @@ namespace EchoPuzzle
                 }
             }
 
-            Debug.Log($"[EchoPuzzle] {label}：恢复了 {applied} 个物体的坐标 / hiding，" +
-                      $"以及 {monApplied} 个怪物的 captured。");
 
             return applied;
         }

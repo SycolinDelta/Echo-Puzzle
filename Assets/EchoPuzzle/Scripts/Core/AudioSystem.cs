@@ -40,7 +40,18 @@ namespace EchoPuzzle
             Stomp,
             Trigger,
             Destination,
+
+            /// <summary>玩家死亡（Dead.ogg）。</summary>
             Death,
+
+            /// <summary>
+            /// 怪物死亡（MonsterDead.ogg）。
+            ///
+            /// ★ 单独一个分类，和玩家的 Death 完全分开 ——
+            ///   否则 Resources.LoadAll 会把两个文件夹里的音频混在一起，
+            ///   玩家死亡时可能随机播到 MonsterDead。
+            /// </summary>
+            MonsterDead,
         }
 
         // ---------------------------------------------------------------- Inspector
@@ -52,7 +63,8 @@ namespace EchoPuzzle
         [Range(0f, 1f)] public float stompVolume       = 0.8f;
         [Range(0f, 1f)] public float triggerVolume     = 0.8f;
         [Range(0f, 1f)] public float destinationVolume = 0.9f;
-        [Range(0f, 1f)] public float deathVolume       = 0.9f;
+        [Range(0f, 1f)] public float deathVolume        = 0.9f;
+        [Range(0f, 1f)] public float monsterDeadVolume  = 0.9f;
 
         [Header("音高随机范围（让重复的音效不至于太机械）")]
         [Range(0f, 0.5f)] public float pitchJitter = 0.06f;
@@ -60,10 +72,6 @@ namespace EchoPuzzle
         [Header("同时最多几个声音")]
         [Tooltip("走路 / 跑步很容易一秒好几个，太多会糊在一起")]
         public int maxVoices = 16;
-
-        [Header("调试")]
-        [Tooltip("勾选后每次播放都在 Console 打印用了哪个音效")]
-        public bool logPlayback;
 
         // ---------------------------------------------------------------- 内部
 
@@ -197,10 +205,6 @@ namespace EchoPuzzle
                         $"  期望位置：Assets/Resources/{path}/ 下的 .ogg / .wav 等。\n" +
                         $"  注意音频文件必须在 Resources 目录里才能被 Resources.LoadAll 找到。");
                 }
-                else if (logPlayback)
-                {
-                    Debug.Log($"[EchoPuzzle] 音效分类「{cue}」加载了 {clips.Length} 条。");
-                }
             }
         }
 
@@ -261,9 +265,6 @@ namespace EchoPuzzle
             src.pitch       = 1f + Random.Range(-pitchJitter, pitchJitter);
             src.timeSamples = 0;
             src.Play();
-
-            if (logPlayback)
-                Debug.Log($"[EchoPuzzle] 播放自定义音效：《{clip.name}》");
         }
 
         private void PlayInternal(Cue cue)
@@ -290,9 +291,6 @@ namespace EchoPuzzle
             src.pitch        = 1f + Random.Range(-pitchJitter, pitchJitter);
             src.timeSamples  = 0;
             src.Play();
-
-            if (logPlayback)
-                Debug.Log($"[EchoPuzzle] 播放音效 {cue}：《{clip.name}》");
         }
 
         /// <summary>
@@ -363,6 +361,7 @@ namespace EchoPuzzle
                 case Cue.Trigger:     return triggerVolume;
                 case Cue.Destination: return destinationVolume;
                 case Cue.Death:       return deathVolume;
+                case Cue.MonsterDead: return monsterDeadVolume;
                 default:              return 1f;
             }
         }

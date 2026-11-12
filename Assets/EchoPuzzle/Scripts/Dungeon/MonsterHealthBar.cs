@@ -32,16 +32,16 @@ namespace EchoPuzzle.Dungeon
 
         [Header("尺寸")]
         [Tooltip("离相机最近时的血条长度（屏幕像素，按 1080 高换算）")]
-        [Min(4f)] public float fullLengthPixels = 110f;
+        [Min(4f)] public float fullLengthPixels = 255f;
 
         [Tooltip("离相机最远时的血条长度（屏幕像素）。不会小于这个值")]
-        [Min(2f)] public float minLengthPixels = 18f;
+        [Min(2f)] public float minLengthPixels = 45f;
 
         [Tooltip("血条厚度（屏幕像素）")]
-        [Min(1f)] public float thicknessPixels = 8f;
+        [Min(1f)] public float thicknessPixels = 20f;
 
         [Tooltip("血条底边在怪物屏幕位置上方多少像素")]
-        public float offsetPixels = 42f;
+        public float offsetPixels = 90f;
 
         [Header("距离缩放")]
         [Tooltip("相机距离 <= 这个值时血条最长")]
@@ -61,7 +61,20 @@ namespace EchoPuzzle.Dungeon
         public Color borderColor = new Color(1f, 1f, 1f, 0.35f);
 
         [Tooltip("描边宽度（像素）")]
-        [Min(0f)] public float borderPixels = 1f;
+        [Min(0f)] public float borderPixels = 1.5f;
+
+        [Header("状态图标（右上角）")]
+        [Tooltip("★ 图标颜色。需求：纯红色")] 
+        public Color iconColor = new Color(1f, 0f, 0f, 1f);
+
+        [Tooltip("★ 图标离怪物屏幕位置左上角多远（像素，x 向右 / y 向上）")] 
+        public Vector2 iconOffset = new Vector2(34f, 46f);
+
+        [Tooltip("★ 感叹号的高度（屏幕像素）。宽度按比例自动算")] 
+        [Min(4f)] public float iconHeight = 18f;
+
+        [Tooltip("★ 省略号的点直径（屏幕像素）")] 
+        [Min(2f)] public float iconDotSize = 4f;
 
         [Header("显隐")]
         [Tooltip("血量变化后到开始淡出之前，保持完全可见的时长（秒）")]
@@ -76,6 +89,10 @@ namespace EchoPuzzle.Dungeon
         // ---------------------------------------------------------------- 运行时
 
         private PuzzleMonster m_Monster;
+
+        /// <summary>地牢模式的怪物外壳（刷出停顿 / 开火蓄力状态都从它读）。</summary>
+        private DungeonEnemy   m_Enemy;
+
         private Camera         m_Cam;
 
         private Texture2D m_White;
@@ -91,7 +108,7 @@ namespace EchoPuzzle.Dungeon
         private bool  m_VisibleWindow;
 
         /// <summary>上次已知的血量，用来检测"发生变化"。</summary>
-        private int m_LastHealth = -1;
+        private float m_LastHealth = -1f;
 
         // ---------------------------------------------------------------- 生命周期
 
@@ -99,6 +116,11 @@ namespace EchoPuzzle.Dungeon
         {
             m_Monster = GetComponent<PuzzleMonster>();
             if (m_Monster == null) m_Monster = GetComponentInParent<PuzzleMonster>();
+
+            // ★ 地牢模式的怪物外壳（刷出停顿 / 开火蓄力都从它读）
+            //   探秘模式没有这个组件，m_Enemy 保持 null，图标不画。
+            m_Enemy = GetComponent<DungeonEnemy>();
+            if (m_Enemy == null) m_Enemy = GetComponentInParent<DungeonEnemy>();
 
             m_White = MakeWhite();
         }
@@ -110,87 +132,27 @@ namespace EchoPuzzle.Dungeon
 
         // ---------------------------------------------------------------- 绘制
 
-        // ---------------------------------------------------------------- 临时测试
-
-        // ★★ 临时测试键：按 H 让**场上所有怪物**各扣 4 血 ★★
-        //
-        //   只在地牢模式、且游戏正在进行中才响应（暂停 / 结算时按无效）。
-        //
-        //   ★ 子弹机制做好之后请把 HandleTestInput() 和这两个常量删掉。
-
-        [Header("临时测试")]
-        [Tooltip("勾掉可禁用测试按键")]
-        public bool enableTestKeys = true;
-
-        /// <summary>测试用伤害键。</summary>
-        public KeyCode testDamageKey = KeyCode.H;
-
-        /// <summary>测试用伤害值。</summary>
-        public int testDamageAmount = 4;
-
-        /// <summary>
-        /// 处理临时测试按键。**场上有几只怪就调几次会重复扣血**，
-        /// 所以这里用一个静态标志保证"一次按键只处理一次"。
-        /// </summary>
-        private void HandleTestInput()
-        {
-            if (!enableTestKeys) return;
-            if (!GameUI.IsDungeonMode) return;
-
-            // 只在真正的"进行中"响应
-            if (GameUI.Current != GameState.Playing) return;
-
-            // 正在输密码时不抢键
-            if (GameUI.PasswordInputActive) return;
-
-            if (!Input.GetKeyDown(testDamageKey)) return;
-
-            // ★ 一次按键只处理一次
-            //   （场上有 N 只怪，N 个组件都会跑到这里，用帧号去重）
-            if (s_LastHandledFrame == Time.frameCount) return;
-            s_LastHandledFrame = Time.frameCount;
-
-            int amount = Mathf.Max(1, testDamageAmount);
-
-            PuzzleMonster[] all = FindObjectsOfType<PuzzleMonster>();
-
-            int hurt = 0;
-
-            for (int i = 0; i < all.Length; i++)
-            {
-                PuzzleMonster m = all[i];
-
-                if (m == null) continue;
-                if (m.DungeonIsDead) continue;
-
-                Hide h = m.GetComponent<Hide>();
-                if (h != null && h.hiding != 0) continue;
-
-                m.DungeonTakeDamage(amount);
-                hurt++;
-            }
-
-            Debug.Log($"[临时测试] 按 {testDamageKey}：对 {hurt} 只怪物各造成 {amount} 点伤害。");
-        }
-
-        /// <summary>上次处理测试按键的帧号（防止 N 个怪物组件重复执行）。</summary>
-        private static int s_LastHandledFrame = -1;
 
         private void Update()
         {
             if (!GameUI.IsDungeonMode) return;
 
-            // ---- 临时测试按键 ----
-            HandleTestInput();
-
             if (m_Monster == null) return;
+
+            // ★ 懒加载：DungeonEnemy 是 MonsterWaveManager 在 SpawnMonster 里
+            //   AddComponent 的，可能晚于 Awake，所以这里补一次。
+            if (m_Enemy == null)
+            {
+                m_Enemy = GetComponent<DungeonEnemy>();
+                if (m_Enemy == null) m_Enemy = GetComponentInParent<DungeonEnemy>();
+            }
 
             float now = Time.unscaledTime;
 
             // ---- 1) 检测血量变化 -> 开启可见窗口 ----
-            int cur = m_Monster.DungeonHealth;
+            float cur = m_Monster.DungeonHealth;
 
-            if (m_LastHealth < 0)
+            if (m_LastHealth < 0f)
             {
                 // 第一次运行：记下初始值，不触发显示
                 m_LastHealth = cur;
@@ -231,10 +193,7 @@ namespace EchoPuzzle.Dungeon
             // ★ 暂停 / 结算 / 首页时**不显示**
             if (GameUI.Current != GameState.Playing) return;
 
-            // 完全透明 -> 不画（平时就是这个状态）
-            if (m_Alpha <= 0.001f) return;
-
-            // 死了 / 被隐藏 -> 不画
+            // 死了 / 被隐藏 -> 血条和图标都不画
             if (m_Monster.DungeonIsDead) return;
 
             Hide h = m_Monster.GetComponent<Hide>();
@@ -278,7 +237,93 @@ namespace EchoPuzzle.Dungeon
             float cx = sp.x;
             float cy = (Screen.height - sp.y) - offY;
 
-            DrawBar(cx, cy, len, thick);
+            // ---- 4) 血条（只在 m_Alpha > 0 时画）----
+            if (m_Alpha > 0.001f)
+                DrawBar(cx, cy, len, thick);
+
+            // ---- 5) ★ 状态图标（右上角）★ ----
+            //
+            //   需求：
+            //     · 开火前 1 秒的蓄力 -> 纯红色小感叹号
+            //     · 刚刷出的 1.5 秒   -> 纯红色小省略号（三个点）
+            //
+            //   ★ 图标**不受血条 alpha 影响**，也不吃距离缩放，
+            //     永远清晰可见。
+            DrawStateIcon(sp);
+        }
+
+        /// <summary>
+        /// 在怪物屏幕位置的**右上角**画状态图标。
+        ///
+        /// 优先级：刷出停顿（省略号）> 开火蓄力（感叹号）。
+        /// 两者理论上不会同时出现（刷出期间不开火），但留个保底。
+        /// </summary>
+        private void DrawStateIcon(Vector3 screenPoint)
+        {
+            if (m_Enemy == null) return;
+
+            bool spawnPause = m_Enemy.IsSpawnInvulnerable;
+            bool windup     = m_Enemy.IsFireWindup;
+
+            if (!spawnPause && !windup) return;
+
+            if (m_White == null) m_White = MakeWhite();
+
+            // 怪物在屏幕上的位置 -> IMGUI 坐标（y 轴向下）
+            float sx = screenPoint.x;
+            float sy = Screen.height - screenPoint.y;
+
+            // 右上角：x 往右、y 往上（IMGUI 里往上 = 减小）
+            float cx = sx + iconOffset.x;
+            float cy = sy - iconOffset.y;
+
+            Color prev = GUI.color;
+            GUI.color = iconColor;
+
+            if (spawnPause)
+                DrawEllipsis(cx, cy);
+            else
+                DrawExclamation(cx, cy);
+
+            GUI.color = prev;
+        }
+
+        /// <summary>画一个纯红的感叹号（竖条 + 底下一个点）。</summary>
+        private void DrawExclamation(float cx, float cy)
+        {
+            float h    = Mathf.Max(4f, iconHeight);
+            float barW = Mathf.Max(2f, h * 0.20f);     // 竖条宽
+            float gap  = Mathf.Max(2f, h * 0.16f);     // 竖条和点之间的间隙
+            float dotS = Mathf.Max(2f, h * 0.22f);     // 点的边长
+
+            // 整体竖直居中：总高 = 竖条 + 间隙 + 点
+            float bodyH = h * 0.62f;
+            float totalH = bodyH + gap + dotS;
+
+            float topY = cy - totalH * 0.5f;
+
+            // 竖条
+            GUI.DrawTexture(new Rect(cx - barW * 0.5f, topY, barW, bodyH), m_White);
+
+            // 下面的点
+            GUI.DrawTexture(new Rect(cx - dotS * 0.5f, topY + bodyH + gap, dotS, dotS), m_White);
+        }
+
+        /// <summary>画一个纯红的省略号（三个并排的方块点）。</summary>
+        private void DrawEllipsis(float cx, float cy)
+        {
+            float d    = Mathf.Max(2f, iconDotSize);
+            float gap  = d * 0.9f;
+
+            float totalW = d * 3f + gap * 2f;
+            float startX = cx - totalW * 0.5f;
+
+            float y = cy - d * 0.5f;
+
+            for (int i = 0; i < 3; i++)
+            {
+                GUI.DrawTexture(new Rect(startX + i * (d + gap), y, d, d), m_White);
+            }
         }
 
         /// <summary>画一条血条：外描边 + 空槽 + 左侧的红色血量。</summary>

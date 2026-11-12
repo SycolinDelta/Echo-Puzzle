@@ -469,6 +469,9 @@ namespace EchoPuzzle
         /// <summary>执行效果。机关空间只触发一次。</summary>
         public void Fire()
         {
+            // ★ 全场锁定中（NextStage 已触发、还没换完地图）—— 谁都不许触发
+            if (GlobalLocked) return;
+
             if (Consumed) return;
 
             // ★ 开了密码机制的 OperateObjects 必须密码正确才能触发
@@ -529,11 +532,20 @@ namespace EchoPuzzle
                     // ★★ 下一层 ★★
                     //
                     //   音效和 Win 一样（Destination）；光带由 EmitTriggerSonar 统一发，
-                    //   外观默认也是 Win 那一套（在 Inspector 里配 sonar）。
+                    //   外观是 nextStageSonar（粗细 0.22、不透明度 1、纯白）。
                     //
                     //   真正"淡出 -> 生成下一层 -> 淡入"的逻辑由
                     //   DungeonMapGenerator 订阅 OnNextStage 事件处理。
                     AudioSystem.Play(AudioSystem.Cue.Destination);
+
+                    // ★★ 锁住全场触发区 ★★
+                    //
+                    //   需求："终点位置的 triggervolume 被触发后，在进入下一张地图前，
+                    //         其他 triggervolume 不会被触发。"
+                    //
+                    //   ★ 必须在 Invoke 之前锁 —— 否则同一帧里紧挨着的另一个
+                    //     触发区还能趁换图前触发一次。
+                    LockAll();
 
                     OnNextStage?.Invoke();
                     break;
@@ -547,6 +559,28 @@ namespace EchoPuzzle
         ///   负责：地图淡出 -> 生成下一层 -> 淡入 -> 玩家出现在新起点。
         /// </summary>
         public static event System.Action OnNextStage;
+
+        /// <summary>
+        /// 【地牢模式】NextStage 已经被触发过 —— 全场 TriggerVolume 一律锁死。
+        ///
+        /// ★ 需求："终点位置的 triggervolume 被触发后，在进入下一张地图前，
+        ///         其他 triggervolume 不会被触发。"
+        ///
+        /// ★ 由 DungeonMapGenerator 在换层时调 <see cref="UnlockAll"/> 解锁。
+        /// </summary>
+        public static bool GlobalLocked { get; private set; }
+
+        /// <summary>锁住全场触发区（NextStage 触发时调用）。</summary>
+        public static void LockAll()
+        {
+            GlobalLocked = true;
+        }
+
+        /// <summary>解锁（换层完成后调用）。</summary>
+        public static void UnlockAll()
+        {
+            GlobalLocked = false;
+        }
 
         /// <summary>
         /// 播放触发音效。
@@ -612,7 +646,6 @@ namespace EchoPuzzle
                 done++;
             }
 
-            Debug.Log($"[EchoPuzzle] 「{name}」触发了 Activate：激活 {done} 个怪物。");
         }
 
         /// <summary>把自己"删除"：hiding = 1。没挂 Hide 时退化为 SetActive(false)。</summary>
@@ -691,7 +724,6 @@ namespace EchoPuzzle
             int on  = SetHidingByName(spawnObjects,  0);
             int off = SetHidingByName(removeObjects, 1);
 
-            Debug.Log($"[EchoPuzzle] 「{name}」触发：启用 {on} 个、删除 {off} 个同名物体。");
 
             // ★ 触发后把自己"删除" —— 通过把 Hide.hiding 改成 1，
             //   而不是 SetActive(false) / Destroy。

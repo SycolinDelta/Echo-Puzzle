@@ -506,10 +506,14 @@ namespace EchoPuzzle
         public float buttonSpacing = 110f;
 
         [Header("暂停界面")]
-        [Tooltip("暂停菜单里按钮的竖直间距。\n\n" +
-                 "★ 只影响暂停菜单，不影响首页 / 通关 / 降低难度界面。\n" +
-                 "  想把暂停菜单排得紧一点就调小这个值。")]
+        [Tooltip("【探秘模式】暂停菜单里按钮的竖直间距。\n\n" +
+                 "★ 只影响暂停菜单，不影响首页 / 通关 / 降低难度界面。")]
         public float pauseButtonSpacing = 80f;
+
+        [Tooltip("【地牢模式】暂停菜单里按钮的竖直间距。\n\n" +
+                 "★ 需求：地牢模式的暂停界面按钮间距 = 110，\n" +
+                 "  和探秘模式的 80 区分开。")]
+        public float dungeonPauseButtonSpacing = 110f;
 
         [Tooltip("标题顶部距离屏幕顶端多少（1080 基准下的像素）")]
         public float titleTop = 300f;
@@ -755,7 +759,11 @@ namespace EchoPuzzle
         private void Update()
         {
             // Esc：进行中 -> 暂停；暂停 -> 继续
-            if (Input.GetKeyDown(KeyCode.Escape))
+            //
+            // ★ 地牢强化三选一界面打开时**忽略 Esc** ——
+            //   那个界面用 timeScale = 0 冻结世界，但它自己不是"暂停"，
+            //   如果这里进了 EnterPaused()，三选一后面就会叠一层暂停 UI。
+            if (Input.GetKeyDown(KeyCode.Escape) && !DungeonBuffUIOpen())
             {
                 if (s_State == GameState.Playing) EnterPaused();
                 else if (s_State == GameState.Paused) EnterPlaying();
@@ -1299,7 +1307,19 @@ namespace EchoPuzzle
             // 但匕首的**调试模式**要显示真实指针来验证瞄准，
             // 这时必须让路，否则这里每帧锁回去，指针一闪就没了。
             var d = DaggerSystem.Instance;
-            return d != null && d.IsAiming && d.showCursorForDebug;
+            if (d != null && d.IsAiming && d.showCursorForDebug) return true;
+
+            // ★ 地牢强化三选一界面：要用真实指针点卡片。
+            //   这里必须让路 —— 否则 LateUpdate / EnforceWorldVisibility
+            //   每帧把光标锁回去，指针就会**疯狂闪烁**。
+            return DungeonBuffUIOpen();
+        }
+
+        /// <summary>地牢强化三选一界面是否开着（探秘模式下永远是 false）。</summary>
+        private static bool DungeonBuffUIOpen()
+        {
+            var ui = EchoPuzzle.Dungeon.DungeonBuffSelectUI.Instance;
+            return ui != null && ui.IsOpen;
         }
 
         private static void LockCursor()
@@ -1497,10 +1517,73 @@ namespace EchoPuzzle
             // 石头回到开局数量
             if (StoneSystem.Instance != null) StoneSystem.Instance.ResetToStart();
 
-            // 音乐停止并复位（否则上一局的音乐会在新一局继续播）
+            // 音乐停止并复位（否则上一局的音乐会在一局里继续播）
             TriggerMusic.ResetAllMusic();
 
+            // ★★ 地牢模式：复位武器 / 蓝量 / 强化 ★★
+            //
+            //   重新开始时玩家可能正按着右键瞄准 —— 如果不管，
+            //   DungeonWeapon 的瞄准圆环会留在场上，
+            //   而且这时 IsAiming 已经不成立、不再跟随玩家，
+            //   看起来就是一个"卡在原地不动的圆环"。
+            ResetDungeonSystems();
+
             m_Elapsed = 0f;
+        }
+
+        /// <summary>
+        /// 复位地牢模式独有的武器 / 蓝量 / 强化系统（探秘模式下什么都不做）。
+        /// </summary>
+        private void ResetDungeonSystems()
+        {
+            if (!IsDungeonMode) return;
+
+            // ---- 武器：强制退出瞄准，隐藏圆环 / 武器模型 / 辅助线 ----
+            var gun = EchoPuzzle.Dungeon.DungeonWeapon.Instance;
+            if (gun != null) gun.ForceLeaveAim();
+
+            // ---- 蓝量：回到开局值 ----
+            var mana = EchoPuzzle.Dungeon.DungeonMana.Instance;
+            if (mana != null) mana.ResetMana();
+
+            // ---- 强化（buff）：清空 ----
+            //
+            //   ★ 按 R 重开一局 = 从第 1 层重新来过，强化自然也要清。
+            //     如果以后想做成"跨局保留"，把这一行去掉即可。
+            var buffs = EchoPuzzle.Dungeon.DungeonBuffState.Instance;
+            if (buffs != null) buffs.Clear();
+
+            // ---- 三选一界面：如果正开着，关掉并把 timeScale 还原 ----
+            var picker = EchoPuzzle.Dungeon.DungeonBuffSelectUI.Instance;
+            if (picker != null && picker.IsOpen) picker.ForceClose();
+
+            // ---- 怪物潮：清掉残留怪物 ----
+            var waves = FindObjectOfType<EchoPuzzle.Dungeon.MonsterWaveManager>();
+            if (waves != null) waves.ForceClear();
+
+            // ---- ★ 地图：回到第 1 层并重新随机生成 ----
+            //
+            //   需求："地牢模式每次重建地图的时机是在开始新游戏、
+            //         进入下一层和点重新开始的时候，并且每次都会重新随机创建地图"
+            //
+            //   ★ 前两个时机已经在 DungeonMapGenerator 里处理了；
+            //     这里是第三个：点"重新开始"。
+            var gen = FindObjectOfType<EchoPuzzle.Dungeon.DungeonMapGenerator>();
+            if (gen != null) gen.RestartDungeonMap();
+
+            // ---- 玩家血量：回到开局值 ----
+            //
+            // ★ 之前漏了这一步，"重新开始"之后血量还是上一局剩下的，
+            //   死过一次再开就会带着 0~1 血进去。
+            var health = FindObjectOfType<EchoPuzzle.Dungeon.PlayerHealth>();
+            if (health != null) health.ResetHealth();
+
+            // ---- 怪物房状态：清掉"已经打过"的标记 ----
+            //
+            // ★ m_Consumed 记录哪些区域已经被清完。重开一局要全部作废，
+            //   否则再走进怪物房时不会重新刷怪（会当成已经打过）。
+            var zone = EchoPuzzle.Dungeon.MonsterZone.Instance;
+            if (zone != null) zone.ResetProgress();
         }
 
         private void ExitToDesktop()
@@ -1997,7 +2080,6 @@ namespace EchoPuzzle
             // ★ 新场景里的 GameUI 会读到这个标志，直接进 Playing
             s_AutoStartOnLoad = true;
 
-            Debug.Log($"[EchoPuzzle] 正在加载场景「{sceneName}」…");
 
             UnityEngine.SceneManagement.SceneManager.LoadScene(
                 sceneName, UnityEngine.SceneManagement.LoadSceneMode.Single);
@@ -2026,9 +2108,11 @@ namespace EchoPuzzle
 
         private void DrawPause(float cx, float w)
         {
-            // ★ 暂停菜单用**独立的**间距字段 pauseButtonSpacing，
-            //   这样调它不会影响首页 / 通关界面。
-            float sp = pauseButtonSpacing;
+            // ★ 暂停菜单用**独立的**间距字段，这样调它不会影响首页 / 通关界面。
+            //   ★ 地牢模式和探秘模式各用各的：
+            //       探秘 = pauseButtonSpacing          (默认 80)
+            //       地牢 = dungeonPauseButtonSpacing   (默认 110)
+            float sp = IsDungeonMode ? dungeonPauseButtonSpacing : pauseButtonSpacing;
 
             float y = titleTop;
             DrawTitle("暂停", cx, w, y);
@@ -2207,7 +2291,9 @@ namespace EchoPuzzle
             DrawTitle("你死了", cx, w, y);
             y += titleToButtons;
 
-            if (SaveSystem.HasSave)
+            // ★ 地牢模式**不显示**「返回存档位置」——
+            //   地牢是肉鸽玩法，没有存档点可回，死了就只能重开。
+            if (!IsDungeonMode && SaveSystem.HasSave)
             {
                 if (DrawButton("返回存档位置", cx, w, y)) LoadGame();
                 y += buttonSpacing;

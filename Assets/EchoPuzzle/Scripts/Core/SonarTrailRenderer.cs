@@ -1158,21 +1158,31 @@ namespace EchoPuzzle
                 if (vol.overrideColor) baseColor = vol.waveColor;
                 if (vol.overrideAlpha) alphaOverride = vol.waveAlpha;
             }
-            // ★★ 地牢模式：**不做**怪物变色球的外观覆盖 ★★
-            //
-            //   探秘模式里"光带进入怪物周围要变成陷阱的观感"是玩法提示；
-            //   地牢模式改成"变色球里出现红色竖线"（见 SenseSphereVisual），
-            //   光带本身**保持原样**，不改粗细 / 颜色 / 透明度。
-            else if (!GameUI.IsDungeonMode)
+            else
             {
                 // 没有落在触发立方体里，再看看是否落在某个**怪物的变色球**里。
                 // 怪物周围那一圈空间要求"和陷阱一样的观感"，所以走同一套覆盖逻辑。
-                PuzzleMonster mon = ZoneSystem.FindMonster(volProbePos);
-                if (mon != null)
+                //
+                // ★★ 地牢模式：只有**潜行**光带变色 ★★
+                //
+                //   需求原文："我希望地牢模式的潜行脚步光带在经过怪物变色球下方时
+                //             会变色，和进入变色球时的变色一样。"
+                //
+                //   所以地牢模式下加一个条件：只处理 isSneak 的光带。
+                //   走路 / 跑步 / 空格 / 子弹 的光带经过变色球时**保持原样**。
+                //
+                //   探秘模式不受影响 —— 那边所有光带都照常变色（原来就是这样）。
+                bool dungeonSneakOnly = GameUI.IsDungeonMode && !tr.isSneak;
+
+                if (!dungeonSneakOnly)
                 {
-                    if (mon.overrideWidth) hw        = Mathf.Max(0.001f, mon.waveWidth) * 0.5f;
-                    if (mon.overrideColor) baseColor = mon.waveColor;
-                    if (mon.overrideAlpha) alphaOverride = mon.waveAlpha;
+                    PuzzleMonster mon = ZoneSystem.FindMonster(volProbePos);
+                    if (mon != null)
+                    {
+                        if (mon.overrideWidth) hw        = Mathf.Max(0.001f, mon.waveWidth) * 0.5f;
+                        if (mon.overrideColor) baseColor = mon.waveColor;
+                        if (mon.overrideAlpha) alphaOverride = mon.waveAlpha;
+                    }
                 }
             }
 

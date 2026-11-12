@@ -442,12 +442,10 @@ namespace EchoPuzzle
 
             m_Dagger = pivotGo.transform;
 
-            // 记录归一化后的信息，方便在 Console 里核对
+            // 记录归一化后的信息（Inspector / 调试面板可以读）
             m_ModelScale  = scale;
             m_ModelLength = daggerTargetLength * daggerScale;
 
-            Debug.Log($"[EchoPuzzle] 匕首已归一化：《{model.name}》原始最长边 {longestSide:F4} 单位，" +
-                      $"缩放 ×{scale:F4} -> 目标长度 {m_ModelLength:F2}m");
         }
 
         /// <summary>

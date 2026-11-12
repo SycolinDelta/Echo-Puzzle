@@ -10,7 +10,9 @@ namespace EchoPuzzle
     ///   而且要在场景切换（Home ↔ 关卡）之间保留 —— 所以放静态字段。
     ///
     /// ── 默认值 ──────────────────────────────────────────────
-    ///   三个**全部默认关闭**（也就是默认是"正常难度"）。
+    ///   · 提高标记上限：**关**
+    ///   · 显示指南针：  **关**
+    ///   · 显示脚印：    **开**  ← 需求：潜行模式和地牢模式都要能看到脚印
     ///
     /// ── 各开关的效果 ────────────────────────────────────────
     ///   · <b>提高标记上限</b>：关闭时数字键 1~3 能放标记，开启时 1~9 都能放
@@ -22,13 +24,18 @@ namespace EchoPuzzle
     public static class DifficultySettings
     {
         /// <summary>提高标记上限：开 -> 数字键 1~9；关 -> 数字键 1~3。</summary>
-        public static bool RaiseMarkerLimit;
+        public static bool RaiseMarkerLimit = false;
 
         /// <summary>显示指南针。</summary>
-        public static bool ShowCompass;
+        public static bool ShowCompass = false;
 
-        /// <summary>显示脚印。</summary>
-        public static bool ShowFootprints;
+        /// <summary>
+        /// 显示脚印。
+        ///
+        /// ★★ 默认**开启** ★★
+        ///   需求原文："我希望在潜行模式和地牢模式都默认开启'显示脚印'而关闭其他两项"
+        /// </summary>
+        public static bool ShowFootprints = true;
 
         // ── 标记槽位编号约定 ───────────────────────────────────
         //   槽位 0..9 一共 10 个，对应数字键：

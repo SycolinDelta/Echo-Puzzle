@@ -61,6 +61,7 @@
   <ItemGroup>
     <Compile Include="Assets\EchoPuzzle\Editor\SceneSetupTool.cs" />
     <Compile Include="Assets\EchoPuzzle\Editor\EchoTriggerSonarStyleTool.cs" />
+    <Compile Include="Assets\EchoPuzzle\Editor\AltWASDMenuStub.cs" />
     <Compile Include="Assets\EchoPuzzle\Editor\EchoRuntimeMaterialBuilder.cs" />
     <Compile Include="Assets\EchoPuzzle\Editor\HideAttachTool.cs" />
     <Compile Include="Assets\EchoPuzzle\Editor\EchoAudioImporter.cs" />

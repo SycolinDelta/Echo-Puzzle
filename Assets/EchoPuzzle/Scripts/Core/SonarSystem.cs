@@ -457,8 +457,6 @@ namespace EchoPuzzle
             playerLayer        = 1 << layer;
             m_PlayerLayerResolved = true;
 
-            Debug.Log($"[EchoPuzzle] 已识别玩家层「{LayerMask.LayerToName(layer)}」(layer {layer})，" +
-                      $"声波射线会排除它。");
         }
 
         /// <summary>

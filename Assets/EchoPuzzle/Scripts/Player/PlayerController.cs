@@ -58,6 +58,17 @@ namespace EchoPuzzle
         [Tooltip("加速度，越大起步越干脆")]
         public float accel      = 16f;
 
+        /// <summary>
+        /// 转身的角加速度（Slerp 系数 / 秒）。
+        ///
+        /// ★ 走路、冲刺、潜行、闪避**全部用这一个值** ——
+        ///   需求："给闪避期间加入加速度，包括角速度的加速度和移动速率的加速度，
+        ///         这两个加速度和走路时的加速度一样。"
+        ///
+        ///   原来这个 12f 是写死在 Slerp 调用里的，现在提上来方便统一调整。
+        /// </summary>
+        public float walkTurnLerp = 12f;
+
         [Header("击杀后潜行加速")]
         [Tooltip("成功移除一只怪物后，潜行速度立刻变成 N 倍")]
         [Min(1f)] public float sneakBoostMultiplier = 4f;
@@ -114,32 +125,32 @@ namespace EchoPuzzle
         public EchoPreset walkEcho = new EchoPreset
         {
             enabled = true, color = Color.white, initialAlpha = 0.4f,
-            rayCount90 = 16, rayCount30 = 16, rayCount60 = 16, range = 30f, speed = 8f, trailSpacing = 0.30f,
+            rayCount90 = 12, rayCount30 = 0, rayCount60 = 6, range = 50f, speed = 8f, trailSpacing = 0.30f,
             maxBounces = 3, bounceFalloff = 0.65f,
-            lifetimeCap = 2f, tailLinger = 20f, bounceLifeLoss = 0.35f,
-            diffuseCount15 = 8, diffuseCount45 = 8, diffuseCount75 = 8,
-            hemisphereCount = 0, hemisphereDiffuse = false,
+            lifetimeCap = 4f, tailLinger = 20f, bounceLifeLoss = 0.35f,
+            diffuseCount15 = 0, diffuseCount45 = 0, diffuseCount75 = 0,
+            hemisphereCount = 18, hemisphereDiffuse = true,
         };
 
         [Header("② 冲刺声波")]
         public EchoPreset runEcho = new EchoPreset
         {
             enabled = true, color = Color.white, initialAlpha = 0.6f,
-            rayCount90 = 16, rayCount30 = 16, rayCount60 = 16, range = 50f, speed = 8f, trailSpacing = 0.30f,
+            rayCount90 = 12, rayCount30 = 0, rayCount60 = 6, range = 50f, speed = 8f, trailSpacing = 0.30f,
             maxBounces = 3, bounceFalloff = 0.65f,
             lifetimeCap = 4f, tailLinger = 20f, bounceLifeLoss = 0.35f,
-            diffuseCount15 = 8, diffuseCount45 = 8, diffuseCount75 = 8,
-            hemisphereCount = 0, hemisphereDiffuse = false,
+            diffuseCount15 = 0, diffuseCount45 = 0, diffuseCount75 = 0,
+            hemisphereCount = 18, hemisphereDiffuse = true,
         };
 
         [Header("③ 潜行声波")]
         public EchoPreset sneakEcho = new EchoPreset
         {
             enabled = true, color = Color.white, initialAlpha = 0.22f,
-            rayCount90 = 8, rayCount30 = 8, rayCount60 = 8, range = 2f, speed = 4f, trailSpacing = 0.25f,
+            rayCount90 = 12, rayCount30 = 0, rayCount60 = 12, range = 2f, speed = 6f, trailSpacing = 0.25f,
             maxBounces = 2, bounceFalloff = 0.5f,
             lifetimeCap = 0.5f, tailLinger = 20f, bounceLifeLoss = 0.15f,
-            diffuseCount15 = 4, diffuseCount45 = 4, diffuseCount75 = 4,
+            diffuseCount15 = 0, diffuseCount45 = 0, diffuseCount75 = 0,
             hemisphereCount = 0, hemisphereDiffuse = false,
         };
 
@@ -148,11 +159,11 @@ namespace EchoPuzzle
         public EchoPreset shoutEcho = new EchoPreset
         {
             enabled = true, color = Color.white, initialAlpha = 1.0f,
-            rayCount90 = 80, rayCount30 = 80, rayCount60 = 80, range = 80f, speed = 8f, trailSpacing = 0.30f,
+            rayCount90 = 40, rayCount30 = 0, rayCount60 = 20, range = 80f, speed = 8f, trailSpacing = 0.30f,
             maxBounces = 4, bounceFalloff = 0.65f,
             lifetimeCap = 10f, tailLinger = 20f, bounceLifeLoss = 0.35f,
-            diffuseCount15 = 40, diffuseCount45 = 40, diffuseCount75 = 40,
-            hemisphereCount = 0, hemisphereDiffuse = false,
+            diffuseCount15 = 0, diffuseCount45 = 0, diffuseCount75 = 0,
+            hemisphereCount = 140, hemisphereDiffuse = true,
         };
 
         // ------------------------------------------------------------------ 地牢模式的声波覆盖
@@ -173,16 +184,16 @@ namespace EchoPuzzle
         [Tooltip("勾上 = 地牢模式使用下面这套独立参数。\n\n" +
                  "★ 不勾 = 地牢模式和探秘模式用同一套（上面那四个）。\n" +
                  "★ 探秘模式**永远**用上面那四个，跟这个开关无关。")]
-        public bool useDungeonEchoes = false;
+        public bool useDungeonEchoes = true;
 
         [Tooltip("地牢 · 走路声波")]
         public EchoPreset dungeonWalkEcho = new EchoPreset
         {
             enabled = true, color = Color.white, initialAlpha = 0.4f,
-            rayCount90 = 16, rayCount30 = 16, rayCount60 = 16, range = 30f, speed = 8f, trailSpacing = 0.30f,
+            rayCount90 = 24, rayCount30 = 0, rayCount60 = 0, range = 10f, speed = 9f, trailSpacing = 0.30f,
             maxBounces = 3, bounceFalloff = 0.65f,
-            lifetimeCap = 2f, tailLinger = 20f, bounceLifeLoss = 0.35f,
-            diffuseCount15 = 8, diffuseCount45 = 8, diffuseCount75 = 8,
+            lifetimeCap = 0.7f, tailLinger = 20f, bounceLifeLoss = 0.35f,
+            diffuseCount15 = 0, diffuseCount45 = 0, diffuseCount75 = 0,
             hemisphereCount = 0, hemisphereDiffuse = false,
         };
 
@@ -190,10 +201,10 @@ namespace EchoPuzzle
         public EchoPreset dungeonRunEcho = new EchoPreset
         {
             enabled = true, color = Color.white, initialAlpha = 0.6f,
-            rayCount90 = 16, rayCount30 = 16, rayCount60 = 16, range = 50f, speed = 8f, trailSpacing = 0.30f,
+            rayCount90 = 24, rayCount30 = 0, rayCount60 = 0, range = 10f, speed = 9f, trailSpacing = 0.30f,
             maxBounces = 3, bounceFalloff = 0.65f,
-            lifetimeCap = 4f, tailLinger = 20f, bounceLifeLoss = 0.35f,
-            diffuseCount15 = 8, diffuseCount45 = 8, diffuseCount75 = 8,
+            lifetimeCap = 0.7f, tailLinger = 20f, bounceLifeLoss = 0.35f,
+            diffuseCount15 = 0, diffuseCount45 = 0, diffuseCount75 = 0,
             hemisphereCount = 0, hemisphereDiffuse = false,
         };
 
@@ -201,10 +212,10 @@ namespace EchoPuzzle
         public EchoPreset dungeonSneakEcho = new EchoPreset
         {
             enabled = true, color = Color.white, initialAlpha = 0.22f,
-            rayCount90 = 8, rayCount30 = 8, rayCount60 = 8, range = 2f, speed = 4f, trailSpacing = 0.25f,
+            rayCount90 = 18, rayCount30 = 0, rayCount60 = 0, range = 2f, speed = 4f, trailSpacing = 0.25f,
             maxBounces = 2, bounceFalloff = 0.5f,
             lifetimeCap = 0.5f, tailLinger = 20f, bounceLifeLoss = 0.15f,
-            diffuseCount15 = 4, diffuseCount45 = 4, diffuseCount75 = 4,
+            diffuseCount15 = 0, diffuseCount45 = 0, diffuseCount75 = 0,
             hemisphereCount = 0, hemisphereDiffuse = false,
         };
 
@@ -212,23 +223,38 @@ namespace EchoPuzzle
         public EchoPreset dungeonShoutEcho = new EchoPreset
         {
             enabled = true, color = Color.white, initialAlpha = 1.0f,
-            rayCount90 = 80, rayCount30 = 80, rayCount60 = 80, range = 80f, speed = 8f, trailSpacing = 0.30f,
+            rayCount90 = 150, rayCount30 = 0, rayCount60 = 0, range = 20f, speed = 9f, trailSpacing = 0.30f,
             maxBounces = 4, bounceFalloff = 0.65f,
-            lifetimeCap = 10f, tailLinger = 20f, bounceLifeLoss = 0.35f,
-            diffuseCount15 = 40, diffuseCount45 = 40, diffuseCount75 = 40,
+            lifetimeCap = 3f, tailLinger = 20f, bounceLifeLoss = 0.35f,
+            diffuseCount15 = 0, diffuseCount45 = 0, diffuseCount75 = 0,
             hemisphereCount = 0, hemisphereDiffuse = false,
         };
 
         /// <summary>
         /// 是否正在使用地牢模式的那套声波参数。
         ///
-        /// ★ 只看 useDungeonEchoes 这一个开关 —— **不按场景强制**。
+        /// ★★ 必须**同时**满足两个条件 ★★
+        ///     1. 勾上 useDungeonEchoes
+        ///     2. 当前在**地牢场景**（DungeonMode）
         ///
-        ///   之前这里写的是 useDungeonEchoes || GameUI.IsDungeonMode，
-        ///   结果是"不勾也会用"，开关等于失效。
-        ///   现在：勾上 = 用地牢那套；不勾 = 用探秘那套（两个模式都一样）。
+        /// ── 为什么要有第 2 条 ────────────────────────────────
+        ///   需求："探秘模式里走路、冲刺、潜行、按空格时释放的光带数量
+        ///         应该与地牢模式完全分开。"
+        ///
+        ///   之前只看 useDungeonEchoes。但这个开关是 **Player.prefab 上的
+        ///   序列化字段**，地牢模式要用它就必须在 prefab 里勾上 ——
+        ///   而同一个 prefab 也被探秘模式使用，于是探秘模式跟着用上了
+        ///   dungeonWalkEcho / dungeonShoutEcho。
+        ///
+        ///   结果就是：在 Inspector 里改 walkEcho / runEcho / sneakEcho /
+        ///   shoutEcho（探秘模式那四个）**完全没有反应**，因为根本没人读它们。
+        ///
+        ///   加上场景判断后：
+        ///     · 探秘模式 -> 永远用 walkEcho / runEcho / sneakEcho / shoutEcho
+        ///     · 地牢模式 + 勾选 -> 用 dungeonXxxEcho
+        ///     · 地牢模式 + 未勾选 -> 退回探秘那一套（有意为之的开关语义）
         /// </summary>
-        private bool UseDungeonEchoSet => useDungeonEchoes;
+        private bool UseDungeonEchoSet => useDungeonEchoes && GameUI.IsDungeonMode;
 
         // ------------------------------------------------------------------ 相机
 
@@ -250,6 +276,46 @@ namespace EchoPuzzle
         public float zoomMax = 14f;
         [Tooltip("滚轮灵敏度：每一格改变多少米")]
         public float zoomStep = 1f;
+
+        // ------------------------------------------------------------------ 地牢模式：正交俯视相机
+        //
+        // ★★ 只影响 DungeonMode，探秘模式（PuzzleMode）仍然是原来的透视自由视角。★★
+        //
+        //   地牢模式的需求：
+        //     · 正交相机（Orthographic）
+        //     · 始终垂直于地面（俯仰锁定 90°，正上方往下看）
+        //     · 滚轮仍然能缩放
+        //     · **水平角锁死**，但数值可以在下面这个字段里调
+
+        [Header("地牢模式 · 正交俯视相机")]
+        [Tooltip("是否在地牢模式使用正交俯视相机。\n\n" +
+                 "关闭 = 地牢模式和探秘模式一样用透视自由视角。")]
+        public bool dungeonOrthographicCamera = true;
+
+        [Tooltip("★★★ 地牢模式相机的水平角（度）★★★\n\n" +
+                 "这是**固定不变**的朝向，鼠标左右移动不会再转镜头。\n\n" +
+                 "   0   = 镜头朝 +Z 方向看（北）\n" +
+                 "   90  = 镜头朝 +X 方向看（东）\n" +
+                 "   180 = 镜头朝 -Z 方向看（南）\n" +
+                 "   270 = 镜头朝 -X 方向看（西）\n\n" +
+                 "★ 只是绕竖直轴的旋转，俯仰永远是正下方，不影响\"垂直俯拍\"。")]
+        [Range(0f, 360f)] public float dungeonCameraYaw = 45f;
+
+        [Tooltip("地牢模式正交相机的透视体高度（= 可视范围，米）。\n\n" +
+                 "★ 正交相机的\"缩放\"就是改这个值：越小看得越近、越大看得越广。\n" +
+                 "  实际值由滚轮在 dungeonZoomMin ~ dungeonZoomMax 之间插值得到。")]
+        [Min(1f)] public float dungeonOrthoSize = 9f;
+
+        [Tooltip("地牢模式滚轮能拉近到多少（正交体高度，米）。越小越近")]
+        [Min(1f)] public float dungeonZoomMin = 8f;
+
+        [Tooltip("地牢模式滚轮能拉到多远（正交体高度，米）。越大越广")]
+        [Min(1f)] public float dungeonZoomMax = 14f;
+
+        [Tooltip("地牢模式相机离地高度（米）。正交相机的机位高度只影响裁剪面，" +
+                 "不影响画面大小 —— 画面大小由上面那几个 Ortho Size 决定。\n\n" +
+                 "填一个比地图高得多的值即可（默认 60，足够盖住整个地牢）。")]
+        [Min(1f)] public float dungeonCameraHeight = 60f;
 
         public float cameraHeight   = 1.55f;
         public float cameraLag      = 14f;
@@ -353,6 +419,30 @@ namespace EchoPuzzle
                 m_CamPivot = pivot.transform;
                 m_CamPivot.SetParent(null);
             }
+            // ★ 地牢模式：开局就切到正交俯视，避免第一帧闪一下透视画面
+            if (IsDungeonTopDown)
+            {
+                ApplyDungeonCameraMode(true);
+
+                cameraDistance = Mathf.Clamp(dungeonOrthoSize,
+                                             Mathf.Max(1f, dungeonZoomMin),
+                                             Mathf.Max(1.1f, dungeonZoomMax));
+
+                m_CamPivot.position = transform.position + Vector3.up * Mathf.Max(1f, dungeonCameraHeight);
+                m_CamPivot.rotation = Quaternion.Euler(90f, dungeonCameraYaw, 0f);
+
+                if (playerCamera != null)
+                {
+                    playerCamera.orthographicSize = cameraDistance;
+
+                    Transform dct = playerCamera.transform;
+                    dct.position = m_CamPivot.position;
+                    dct.rotation = m_CamPivot.rotation;
+                }
+
+                return;
+            }
+
             m_CamPivot.position = transform.position + Vector3.up * CurrentCameraHeight();
             m_CamPivot.rotation = Quaternion.Euler(m_Pitch, m_Yaw, 0f);
 
@@ -423,7 +513,6 @@ namespace EchoPuzzle
             //   "There are no audio listeners in the scene" 警告。
             EnsureAudioListener(m_AutoCamera);
 
-            Debug.Log("[EchoPuzzle] 场景里没有相机，已自动创建一个（EchoCamera）。");
         }
 
         /// <summary>
@@ -437,7 +526,6 @@ namespace EchoPuzzle
             if (Object.FindObjectOfType<AudioListener>() != null) return;
 
             host.AddComponent<AudioListener>();
-            Debug.Log("[EchoPuzzle] 场景里没有 AudioListener，已挂到自动创建的相机上。");
         }
 
         /// <summary>场景里没有声波系统就建一个。</summary>
@@ -456,7 +544,6 @@ namespace EchoPuzzle
             echo = m_AutoSonar.AddComponent<SonarSystem>();
             echo.trailRenderer = trailRenderer;
 
-            Debug.Log("[EchoPuzzle] 场景里没有声波系统，已自动创建一个（SonarSystem）。");
         }
 
         /// <summary>场景里没有标记系统就建一个（按数字键 1~5 放标记）。</summary>
@@ -526,6 +613,46 @@ namespace EchoPuzzle
             m_StrideAccum        = 0f;
             m_HasTakenFirstStep  = false;
 
+            // ★★ 地牢模式：正交俯视相机，直接摆到"玩家正上方 + 固定水平角" ★★
+            //
+            //   和下面的透视逻辑分开写，探秘模式完全不受影响。
+            if (IsDungeonTopDown)
+            {
+                ApplyDungeonCameraMode(true);
+
+                // 正交尺寸也回到默认
+                cameraDistance = Mathf.Clamp(dungeonOrthoSize,
+                                             Mathf.Max(1f, dungeonZoomMin),
+                                             Mathf.Max(1.1f, dungeonZoomMax));
+
+                if (m_CamPivot != null)
+                {
+                    m_CamPivot.position = position + Vector3.up * Mathf.Max(1f, dungeonCameraHeight);
+                    m_CamPivot.rotation = Quaternion.Euler(90f, dungeonCameraYaw, 0f);
+                }
+
+                // ★ 下一帧 LateUpdate 不要再 lerp，直接吸附到玩家
+                m_CameraSnapNextFrame = true;
+
+                if (playerCamera != null)
+                {
+                    playerCamera.orthographicSize = cameraDistance;
+
+                    Transform dct = playerCamera.transform;
+                    dct.position = m_CamPivot != null
+                        ? m_CamPivot.position
+                        : position + Vector3.up * Mathf.Max(1f, dungeonCameraHeight);
+                    dct.rotation = m_CamPivot != null ? m_CamPivot.rotation
+                                                      : Quaternion.Euler(90f, dungeonCameraYaw, 0f);
+                }
+
+                if (m_Controller != null) m_Controller.enabled = true;
+                return;
+            }
+
+            // 不在正交模式时确保相机是透视的（从地牢切回探秘 / 关掉开关时用）
+            ApplyDungeonCameraMode(false);
+
             // 每次开局把相机距离还原成默认值，玩家滚轮缩放过的距离不跨局残留
             cameraDistance = defaultCameraDistance;
 
@@ -556,7 +683,12 @@ namespace EchoPuzzle
             // 只有投石需要解锁光标；匕首用虚拟光标，光标保持锁定。
             bool aiming = stones != null && stones.IsAiming;
 
-            if (hasFocus && lockCursorOnStart && GameUI.CameraInputActive && !aiming)
+            // ★ 地牢模式的强化三选一界面要用真实指针点卡片，
+            //   切窗口回来时不能把它锁回去（否则点哪都没反应）。
+            bool buffUiOpen = Dungeon.DungeonBuffSelectUI.Instance != null
+                           && Dungeon.DungeonBuffSelectUI.Instance.IsOpen;
+
+            if (hasFocus && lockCursorOnStart && GameUI.CameraInputActive && !aiming && !buffUiOpen)
             {
                 Cursor.lockState = CursorLockMode.Locked;
                 Cursor.visible   = false;
@@ -618,12 +750,29 @@ namespace EchoPuzzle
                 return;
             }
 
+            // ★★ 充能推进（闪避结束后才开始充）★★
+            TickDodgeCharge();
+
+            // ★★ 闪避必须在 HandleMove **之前**处理 ★★
+            //
+            //   HandleMove 里要靠 IsDodging 决定"用走路速度×5"和"强制退出冲刺/潜行"。
+            //   如果闪避放在它后面，按下 Alt 的那一帧 IsDodging 还是 false，
+            //   于是当帧仍然按冲刺/潜行速度走，而且不会退出冲刺/潜行状态。
+            HandleDungeonDodge();
+
             HandleMove();
             HandleStrideNoise();
 
-            if (Input.GetKeyDown(manualPingKey))
+            // ★ 空格：地牢模式有冷却（dungeonShoutCooldown），探秘模式无冷却
+            bool shoutReady = !GameUI.IsDungeonMode
+                           || Time.timeSinceLevelLoad >= m_NextShoutTime;
+
+            if (Input.GetKeyDown(manualPingKey) && shoutReady)
             {
                 NoteAction(PlayerAction.Space);
+
+                if (GameUI.IsDungeonMode)
+                    m_NextShoutTime = Time.timeSinceLevelLoad + Mathf.Max(0f, dungeonShoutCooldown);
 
                 // ★ 空格（跺脚）是独立声源：**不受潜行影响**
                 //   地牢模式用自己那一套 dungeonShoutEcho
@@ -643,7 +792,774 @@ namespace EchoPuzzle
             if (Input.GetKeyDown(cameraResetKey)) ResetCamera();
         }
 
+        // ------------------------------------------------------------------ 地牢模式闪避
+
+        /// <summary>
+        /// 地牢模式的闪避：按下左 Alt -> 0.5 秒无敌 + 5 倍走路速度 + 半透明。
+        ///
+        /// ★ 探秘模式完全不执行。
+        /// ★ 冷却从**按下那一刻**开始算（不是从闪避结束算）。
+        /// </summary>
+        // ══════════════════════════════════════════════════════════════════
+        //                     地牢模式 · 闪避（充能制）
+        // ══════════════════════════════════════════════════════════════════
+        //
+        //   ★★ 没有冷却，改成「充能」★★
+        //
+        //   ── 能量 ─────────────────────────────────────────────────────
+        //     · 满充能 = 2 秒
+        //     · 基础单位 = 0.1 秒（一切按 0.1s 的倍数走）
+        //     · **只要能量 >= 0.5s 就能按左 Alt**
+        //
+        //   ── 一次闪避消耗多少 ─────────────────────────────────────────
+        //     · 按下就立刻扣 0.5s（这是每次最少消耗）
+        //     · 时间轴：0.2 加速 → 0.1 维持 17 → [继续消耗] → 0.2 减速
+        //     · 到第 0.3s 若仍按住 Alt，则每多维持 0.1s 再扣 0.1s 能量，
+        //       1:1 兑换，直到能量耗尽
+        //     · 最多再消耗 1.5s -> 17 速一共 1.6s -> 全程 2.0s
+        //
+        //   ── 充能节奏（已有能量越少，充能越慢）────────────────────────
+        //     已有能量        每次充能间隔
+        //     1.5 ~ 2.0s      0.2s
+        //     1.2 ~ 1.4s      0.3s
+        //     0.9 ~ 1.1s      0.4s
+        //     0.6 ~ 0.8s      0.5s
+        //     0.3 ~ 0.5s      0.6s
+        //     0.0 ~ 0.2s      0.7s
+        //     · 每次充能 +0.1s
+        //     · **闪避结束后才开始充能**
+        //
+        // ══════════════════════════════════════════════════════════════════
+
+        private const float DodgeEnergyStep = 0.1f;    // 充能基础单位
+
+
+        /// <summary>
+        /// 地牢模式的闪避（充能制，支持长按）。
+        /// </summary>
+        private void HandleDungeonDodge()
+        {
+            if (!GameUI.IsDungeonMode) return;
+            if (!GameUI.PlayerControllable) return;
+
+            float now = Time.timeSinceLevelLoad;
+
+            // ---- 1) 按下键：开始闪避（只要能量 >= 最小消耗）----
+            if (Input.GetKeyDown(dungeonDodgeKey) && !m_DodgeCharging && !IsDodging)
+            {
+                if (!CanStartDodge()) return;      // 能量不足，按了也没用
+
+                // ★ 按下立刻扣掉最小消耗 0.5s
+                m_DodgeHoldExtend  = 0f;
+                m_DodgeHoldCurrent = dodgeHoldTime;
+                m_DodgeCharging    = true;
+
+                // 三段式曲线的时间原点 + 加速段起点速度
+                m_DodgeStartTime  = now;
+                m_DodgeStartSpeed = m_HorizontalVelocity.magnitude;
+
+                // ★★ 只扣「基础消耗 0.5s」★★
+                //
+                //   需求："单击左alt会立即消耗0.5s充能，这也是每次使用时
+                //         至少会消耗的能量。"
+                //         "在0.3s后继续消耗能量来1:1维持17速，
+                //          最多再消耗1.5s后耗尽"
+                //
+                //   ★ 0.2 加速和 0.1 固定维持是"基础 0.5s"覆盖的，
+                //     不再额外扣 —— 否则满能量只能撑 1.9s。
+                SpendDodgeEnergy(MinDodgeEnergy);
+
+                StartDodgeSegment(now);
+
+                // 加速度的方向：有输入就朝输入方向，没输入就朝玩家正面
+                m_DodgeDirection = CurrentMoveDirection();
+
+                ApplyDodgeAlpha(true);
+
+                NoteAction(PlayerAction.Move);
+
+                // 一旦开始闪避，充能暂停
+                m_ChargeAccum = 0f;
+            }
+
+            // ---- 2) 按住键：从第 0.3s 起继续消耗能量维持 17 速 ----
+            //
+            //   需求："如果在 0.3s 后仍然按住左 alt，则会继续消耗充能，
+            //         每维持 0.1s 消耗 0.1s 能量，直至能量耗尽。"
+            if (m_DodgeCharging)
+            {
+                float t = now - m_DodgeStartTime;
+
+                // 延长段起点 = 加速 + 固定维持
+                float extendStart = Mathf.Max(0f, dodgeAccelTime) + Mathf.Max(0f, dodgeHoldTime);
+
+                if (t > extendStart && Input.GetKey(dungeonDodgeKey))
+                {
+                    float maxHold = Mathf.Max(dodgeHoldTime, dodgeMaxHoldTime);
+                    float step    = Mathf.Max(0.01f, DodgeEnergyStep);
+
+                    // 理论上想延长多少（按 0.1s 取整，只增不减）
+                    float wantExtend = Mathf.Floor((t - extendStart) / step) * step;
+                    wantExtend = Mathf.Clamp(wantExtend, 0f, Mathf.Max(0f, maxHold - dodgeHoldTime));
+
+                    if (wantExtend > m_DodgeHoldExtend)
+                    {
+                        // ★ 能量够不够撑到 wantExtend？
+                        //
+                        //   基础 0.5s 已经在按下时扣掉了，
+                        //   这里只需要再付「新延长出来的那部分」。
+                        float need = wantExtend - m_DodgeHoldExtend;
+                        float avail = Mathf.Max(0f, m_DodgeEnergy);
+
+                        if (avail < need)
+                        {
+                            // 能量只够撑一小段 -> 按 0.1s 单位向下取整
+                            need      = Mathf.Floor(avail / step) * step;
+                            wantExtend = m_DodgeHoldExtend + need;
+                        }
+
+                        if (need > 0f)
+                        {
+                            SpendDodgeEnergy(need);
+
+                            m_DodgeHoldExtend  = wantExtend;
+                            m_DodgeHoldCurrent = dodgeHoldTime + wantExtend;
+
+                            StartDodgeSegment(now);
+                        }
+                    }
+                }
+            }
+
+            // ---- 3) 闪避结束：恢复正常材质 ----
+            //
+            // ★ 判断依据是"有没有正在替换中"（m_DodgeRenderers.Count），
+            //   不是早就废弃的 m_SavedOutlineAlpha —— 那个字段现在没人赋值了，
+            //   用它当判据会导致材质永远恢复不回来。
+            if (!IsDodging)
+            {
+                if (m_DodgeCharging)
+                {
+                    m_DodgeCharging = false;
+
+                    // 闪避结束 -> 充能累加器清零，从这一刻开始重新充能
+                    m_ChargeAccum = 0f;
+                }
+
+                ApplyDodgeAlpha(false);
+            }
+        }
+
+        /// <summary>
+        /// 按当前的维持时长，重算闪避的结束时刻 + 重新颁发无敌帧。
+        ///
+        /// ★ 每次延长维持段都会重新调用一次 ——
+        ///   m_DodgeUntil 和无敌时间都跟着往后推。
+        /// </summary>
+        private void StartDodgeSegment(float now)
+        {
+            float a = Mathf.Max(0f, dodgeAccelTime);
+            float h = Mathf.Max(0f, m_DodgeHoldCurrent);
+            float d = Mathf.Max(0f, dodgeDecelTime);
+
+            float total = Mathf.Max(0.01f, a + h + d);
+
+            m_DodgeUntil = m_DodgeStartTime + total;
+
+            // ★ 无敌帧：覆盖**整段**闪避（加速 + 维持 + 减速）
+            //
+            //   PlayerHealth 没有 Instance 单例，用 FindObjectOfType 找
+            //   （和 DungeonMonsterBullet 里同一个做法）
+            if (m_CachedHealth == null) m_CachedHealth = FindObjectOfType<Dungeon.PlayerHealth>();
+
+            if (m_CachedHealth != null)
+            {
+                // GrantInvincibility 是"只延长不缩短"，
+                // 所以每次延长都要把绝对时刻重新算一遍
+                float remain = m_DodgeUntil - now;
+
+                if (remain > 0f) m_CachedHealth.GrantInvincibility(remain);
+            }
+        }
+
+        // ------------------------------------------------------------------ 充能
+
+        /// <summary>
+        /// 能量是否够按一次闪避（至少 0.5s）。
+        /// </summary>
+        public bool CanStartDodge()
+            => m_DodgeEnergy >= MinDodgeEnergy - 1e-4f;
+
+        /// <summary>扣能量（按 0.1s 精度）。</summary>
+        private void SpendDodgeEnergy(float amount)
+        {
+            if (amount <= 0f) return;
+
+            SetDodgeEnergy(m_DodgeEnergy - amount);
+        }
+
+        /// <summary>设置能量（夹到 0..2，并对齐到 0.1s 精度）。</summary>
+        private void SetDodgeEnergy(float value)
+        {
+            float max   = Mathf.Max(DodgeEnergyStep, DodgeEnergyMax);
+            float step  = Mathf.Max(0.01f, DodgeEnergyStep);
+
+            // 对齐到 0.1s 的整数倍（用 Round 消掉累积误差）
+            float rounded = Mathf.Round(value / step) * step;
+
+            m_DodgeEnergy = Mathf.Clamp(rounded, 0f, max);
+        }
+
+        /// <summary>
+        /// 按当前能量决定充能间隔（秒）。
+        ///
+        /// 需求：
+        ///   1.5~2.0s -> 0.2s
+        ///   1.2~1.4s -> 0.3s
+        ///   0.9~1.1s -> 0.4s
+        ///   0.6~0.8s -> 0.5s
+        ///   0.3~0.5s -> 0.6s
+        ///   0.0~0.2s -> 0.7s
+        /// </summary>
+        private float ChargeIntervalFor(float energy)
+        {
+            float e = Mathf.Max(0f, energy);
+
+            if (e >= 1.5f - 1e-3f) return 0.3f;
+            if (e >= 1.2f - 1e-3f) return 0.4f;
+            if (e >= 0.9f - 1e-3f) return 0.5f;
+            if (e >= 0.6f - 1e-3f) return 0.6f;
+            if (e >= 0.3f - 1e-3f) return 0.7f;
+
+            return 0.7f;
+        }
+
+        /// <summary>
+        /// 充能推进（每帧调）。
+        ///
+        /// ★ 闪避进行中不充能（"在闪避结束后才开始充能"）。
+        /// ★ 每满一个间隔就 +0.1s，间隔由**当前能量**决定。
+        /// </summary>
+        private void TickDodgeCharge()
+        {
+            if (!GameUI.IsDungeonMode) return;
+
+            // 闪避中不充能
+            if (m_DodgeCharging || IsDodging)
+            {
+                m_ChargeAccum = 0f;
+                return;
+            }
+
+            if (m_DodgeEnergy >= DodgeEnergyMax - 1e-4f)
+            {
+                m_ChargeAccum = 0f;
+                return;
+            }
+
+            float interval = ChargeIntervalFor(m_DodgeEnergy);
+
+            m_ChargeAccum += Time.deltaTime;
+
+            // 一帧内可能跨过多个间隔（帧率很低时），用 while 补齐
+            while (m_ChargeAccum >= interval && m_DodgeEnergy < DodgeEnergyMax - 1e-4f)
+            {
+                m_ChargeAccum -= interval;
+
+                SetDodgeEnergy(m_DodgeEnergy + DodgeEnergyStep);
+
+                // 能量变了 -> 间隔可能也变了
+                interval = ChargeIntervalFor(m_DodgeEnergy);
+
+                if (interval <= 0f) break;
+            }
+        }
+
+
+        /// <summary>
+        /// 闪避期间的速度曲线（三段式平滑加减速）。
+        ///
+        /// ★ 需求原文："把闪避时的加速度改成平滑的加减速，不论原本的速度是多少，
+        ///             按左alt后都会在0.2秒内将移速提高至17，维持0.1秒，
+        ///             然后在0.2秒内将移速降低至当前该有的移速。"
+        ///
+        ///   时间轴：
+        ///     [0, a)          加速：startSpeed -> peak     （a = dodgeAccelTime）
+        ///     [a, a+h)        维持：peak                    （h = dodgeHoldTime）
+        ///     [a+h, a+h+d]    减速：peak -> naturalSpeed    （d = dodgeDecelTime）
+        ///
+        ///   ★ naturalSpeed 是**每帧实时算的** ——
+        ///     玩家在这 0.5 秒里按住 Shift，减速段就会降到冲刺速度。
+        /// </summary>
+        private float DodgeSpeedAt(float now, float peak, float naturalSpeed)
+        {
+            float a = Mathf.Max(0f, dodgeAccelTime);
+
+            // ★★ 用**动态**的维持时长 ★★
+            //   单击 = dodgeHoldTime（0.1s）
+            //   长按 = dodgeHoldTime + 已延长量（最多到 dodgeMaxHoldTime）
+            float h = Mathf.Max(0f, m_DodgeHoldCurrent > 0f ? m_DodgeHoldCurrent : dodgeHoldTime);
+
+            float d = Mathf.Max(0f, dodgeDecelTime);
+
+            float t = now - m_DodgeStartTime;
+
+            // ---- 加速段 ----
+            if (t < a)
+            {
+                if (a <= 1e-4f) return peak;
+
+                // SmoothStep 让起步和到达都不突兀
+                float k = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(t / a));
+                return Mathf.Lerp(m_DodgeStartSpeed, peak, k);
+            }
+
+            // ---- 维持段 ----
+            if (t < a + h) return peak;
+
+            // ---- 减速段 ----
+            if (t < a + h + d)
+            {
+                if (d <= 1e-4f) return naturalSpeed;
+
+                float k = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01((t - a - h) / d));
+                return Mathf.Lerp(peak, naturalSpeed, k);
+            }
+
+            // 曲线走完（理论上 IsDodging 已经为 false）
+            return naturalSpeed;
+        }
+
+        /// <summary>当前输入对应的世界移动方向（没有输入时用玩家正面）。</summary>
+        private Vector3 CurrentMoveDirection()
+        {
+            float h = -Input.GetAxisRaw("Horizontal");
+            float v = Input.GetAxisRaw("Vertical");
+
+            Vector3 fwd;
+
+            if (IsDungeonTopDown)
+            {
+                float yawRad = dungeonCameraYaw * Mathf.Deg2Rad;
+                fwd = new Vector3(Mathf.Sin(yawRad), 0f, Mathf.Cos(yawRad));
+            }
+            else
+            {
+                fwd = m_CamPivot != null ? m_CamPivot.forward : transform.forward;
+                fwd.y = 0f;
+            }
+
+            if (fwd.sqrMagnitude < 1e-6f) fwd = Vector3.forward;
+            fwd.Normalize();
+
+            Vector3 right = Vector3.Cross(fwd, Vector3.up).normalized;
+
+            Vector3 dir = fwd * v + right * h;
+
+            if (dir.sqrMagnitude < 1e-6f)
+                dir = transform.forward;
+
+            dir.y = 0f;
+
+            return dir.sqrMagnitude > 1e-6f ? dir.normalized : Vector3.forward;
+        }
+
+        // ------------------------------------------------------------------ 闪避的半透明
+
+        // ★★ 为什么不是"改 alpha"，而是"换材质" ★★
+        //
+        //   玩家的可见性由 EchoPuzzle/Outline 着色器决定，而那个 shader
+        //   **没有 Blend 指令**（走的是不透明管线）—— 改 _OutlineColor.a
+        //   在画面上毫无变化。
+        //
+        //   所以这里另外准备一个 EchoPuzzle/OutlineTransparent：
+        //   外观和 Outline 完全一致，只是多了 _Alpha 属性 + 透明混合。
+        //   闪避时把它换上去，结束后换回原材质。
+
+        /// <summary>闪避用的半透明材质（懒创建，整个组件共用一个）。</summary>
+        private Material m_DodgeMat;
+
+        /// <summary>闪避期间被替换的渲染器 → 它们原本的材质。</summary>
+        private readonly System.Collections.Generic.List<Renderer> m_DodgeRenderers
+            = new System.Collections.Generic.List<Renderer>(8);
+        private readonly System.Collections.Generic.List<Material> m_DodgeSavedMats
+            = new System.Collections.Generic.List<Material>(8);
+
+        /// <summary>
+        /// 开 / 关闪避的半透明效果。
+        ///
+        /// ★ 需求原文："要将玩家物体和武器建模、瞄准圈一同替换。"
+        ///   所以搜集范围是：
+        ///     · 玩家自己的所有 Renderer
+        ///     · DungeonWeapon 的瞄准圆环 / 武器模型 / 辅助线（它们挂在武器物体下）
+        /// </summary>
+        private void ApplyDodgeAlpha(bool on)
+        {
+            if (on) EnterDodgeVisual();
+            else    ExitDodgeVisual();
+        }
+
+        private void EnterDodgeVisual()
+        {
+            if (m_DodgeRenderers.Count > 0) return;   // 已经在闪避视觉里了
+
+            Material dodge = EnsureDodgeMaterial();
+            if (dodge == null) return;
+
+            // ---- 1) 玩家自己的渲染器 ----
+            CollectDodgeRenderers(transform);
+
+            // ---- 2) 武器 / 瞄准圈 / 辅助线 ----
+            //
+            //   DungeonWeapon 在场景里是个独立物体（DungeonWeaponBootstrap 建的），
+            //   所以要单独找一次。
+            var gun = Dungeon.DungeonWeapon.Instance;
+            if (gun != null && gun != transform && !gun.transform.IsChildOf(transform))
+                CollectDodgeRenderers(gun.transform);
+
+            if (m_DodgeRenderers.Count == 0)
+            {
+                Debug.LogWarning("[地牢] 闪避：没找到可以替换的轮廓渲染器，" +
+                                 "半透明效果不会生效。");
+                return;
+            }
+
+
+            // ---- 3) 把 alpha 设成目标值 ----
+            if (dodge.HasProperty("_Alpha"))
+                dodge.SetFloat("_Alpha", Mathf.Clamp01(dodgeAlpha));
+
+            // ---- 4) 换成半透明材质 ----
+            for (int i = 0; i < m_DodgeRenderers.Count; i++)
+            {
+                Renderer r = m_DodgeRenderers[i];
+                if (r == null) continue;
+
+                m_DodgeSavedMats.Add(r.sharedMaterial);
+                r.sharedMaterial = dodge;
+            }
+        }
+
+        private void ExitDodgeVisual()
+        {
+            if (m_DodgeRenderers.Count == 0) return;
+
+            for (int i = 0; i < m_DodgeRenderers.Count; i++)
+            {
+                Renderer r = m_DodgeRenderers[i];
+                if (r == null) continue;
+
+                if (i < m_DodgeSavedMats.Count)
+                    r.sharedMaterial = m_DodgeSavedMats[i];
+            }
+
+            m_DodgeRenderers.Clear();
+            m_DodgeSavedMats.Clear();
+        }
+
+        /// <summary>把一个物体及其所有子物体里有材质的 Renderer 收进来。</summary>
+        private void CollectDodgeRenderers(Transform root)
+        {
+            Renderer[] rs = root.GetComponentsInChildren<Renderer>(true);
+
+            for (int i = 0; i < rs.Length; i++)
+            {
+                Renderer r = rs[i];
+                if (r == null) continue;
+                if (r.sharedMaterial == null) continue;
+
+                // ★ 只处理轮廓类材质 —— 声波光带、标记、脚印这些不该跟着变透明
+                Material m = r.sharedMaterial;
+                if (!IsOutlineLike(m)) continue;
+
+                if (!m_DodgeRenderers.Contains(r))
+                    m_DodgeRenderers.Add(r);
+            }
+        }
+
+        /// <summary>这个材质是不是"玩家轮廓 / 瞄准圈"这一类（要一起变透明的）。</summary>
+        private static bool IsOutlineLike(Material m)
+        {
+            if (m == null || m.shader == null) return false;
+
+            string n = m.shader.name;
+
+            return n == "EchoPuzzle/Outline"
+                || n == "EchoPuzzle/OutlineTransparent"
+                || n == "EchoPuzzle/AimOverlay";
+        }
+
+        /// <summary>懒创建闪避用的半透明材质。</summary>
+        private Material EnsureDodgeMaterial()
+        {
+            if (m_DodgeMat != null) return m_DodgeMat;
+
+            // ★ 优先从 Resources 加载现成的材质资产 ——
+            //   Shader.Find 只在"shader 被任何材质引用"时才可靠，
+            //   打包后裸 shader 可能被剔除。
+            Material asset = Resources.Load<Material>("EchoRuntime/EchoDodgeOutline");
+
+            if (asset != null)
+            {
+                m_DodgeMat = new Material(asset)
+                {
+                    name      = "DodgeTransparentRuntime",
+                    hideFlags = HideFlags.DontSave,
+                };
+
+                if (m_DodgeMat.HasProperty("_Alpha"))
+                    m_DodgeMat.SetFloat("_Alpha", 1f);
+
+                // ★ 闪避期间描边亮度降到 1.0（默认 2.0 会过曝成纯白）
+                if (m_DodgeMat.HasProperty("_Glow"))
+                    m_DodgeMat.SetFloat("_Glow", dodgeGlow);
+
+                return m_DodgeMat;
+            }
+
+            // ---- 兜底：现场用 shader 建一个 ----
+            Shader sh = Shader.Find("EchoPuzzle/OutlineTransparent");
+
+            if (sh == null)
+            {
+                Debug.LogWarning("[地牢] 找不到闪避用的半透明材质\n" +
+                                 "（Resources/EchoRuntime/EchoDodgeOutline 或 " +
+                                 "Shader \"EchoPuzzle/OutlineTransparent\"），" +
+                                 "闪避的半透明效果不会生效。");
+                return null;
+            }
+
+            m_DodgeMat = new Material(sh)
+            {
+                name      = "DodgeTransparentRuntime",
+                hideFlags = HideFlags.DontSave,
+            };
+
+            if (m_DodgeMat.HasProperty("_OutlineColor")) m_DodgeMat.SetColor("_OutlineColor", Color.white);
+            if (m_DodgeMat.HasProperty("_BodyColor"))    m_DodgeMat.SetColor("_BodyColor", Color.black);
+            if (m_DodgeMat.HasProperty("_Alpha"))        m_DodgeMat.SetFloat("_Alpha", 1f);
+
+            // ★★ 闪避期间把描边亮度降到 1.0 ★★
+            //
+            //   EchoOutline 的 _Glow 默认是 2.0 —— 描边 RGB 会过曝成纯白，
+            //   即使 alpha 降到 0.1，深色背景上还能看见一圈白边。
+            //   降到 1.0 后就是"本色 × 1"，配合低 alpha 才能真正淡下去。
+            if (m_DodgeMat.HasProperty("_Glow")) m_DodgeMat.SetFloat("_Glow", dodgeGlow);
+
+            return m_DodgeMat;
+        }
+
+        /// <summary>闪避方向（按下那一刻定好，闪避期间不转向）。</summary>
+        private Vector3 m_DodgeDirection = Vector3.forward;
+
+        /// <summary>缓存的 PlayerHealth（地牢模式闪避加无敌用）。</summary>
+        private Dungeon.PlayerHealth m_CachedHealth;
+
+        /// <summary>上一帧是否在闪避（用来检测"闪避刚结束"那一帧）。</summary>
+        private bool m_WasDodging;
+
+        /// <summary>
+        /// 下一帧 LateUpdate 把镜头**立即吸附**到玩家身上（不做平滑）。
+        ///
+        /// ★ 换地图 / 重生 / 重新开始时置 true ——
+        ///   否则玩家瞬移后镜头会从旧位置"滑过去"。
+        /// </summary>
+        private bool m_CameraSnapNextFrame;
+
         // ------------------------------------------------------------------ 相机复位
+
+        // ------------------------------------------------------------------ 地牢模式：闪避 + 技能冷却
+
+        // ★★ 只在地牢模式生效，探秘模式完全不受影响。★★
+        //
+        //   闪避：按左 Alt，0.5 秒无敌 + 走路速度的 5 倍，期间玩家半透明。
+        //   CD：  闪避 1 秒 / 空格发声 5 秒，剩余时间显示在右下角。
+
+        [Header("地牢模式 · 闪避")]
+        [Tooltip("闪避按键")]
+        public KeyCode dungeonDodgeKey = KeyCode.LeftAlt;
+
+        // ★★ 闪避的移速曲线（三段式，总长 = 加速 + 维持 + 减速）★★
+        //
+        //   需求原文："把闪避时的加速度改成平滑的加减速，不论原本的速度是多少，
+        //             按左alt后都会在0.2秒内将移速提高至17，维持0.1秒，
+        //             然后在0.2秒内将移速降低至当前该有的移速。"
+        //
+        //   时间轴（秒）：
+        //     0.0 ──────── 0.2 ── 0.3 ──────── 0.5
+        //     加速到峰值    维持    降到当前该有速度
+
+        [Tooltip("★ 加速段时长（秒）：从当前速度平滑升到闪避峰值速度")]
+        [Min(0f)] public float dodgeAccelTime = 0.2f;
+
+        [Tooltip("★ 单击时的维持段时长（秒）：保持在峰值速度")]
+        [Min(0f)] public float dodgeHoldTime = 0.1f;
+
+        [Tooltip("★ 长按时的维持段**上限**（秒）。\n\n" +
+                 "需求：最多让维持 17 速的时间增至 1.6 秒，\n" +
+                 "     也就是整个无敌时间最多 2 秒（0.2 + 1.6 + 0.2）。")]
+        [Min(0f)] public float dodgeMaxHoldTime = 1.6f;
+
+        [Tooltip("★ 长按延长维持时间的**最小单位**（秒）。需求：0.1 秒")]
+        [Min(0.01f)] public float dodgeHoldStep = 0.1f;
+
+        [Tooltip("★ 减速段时长（秒）：从峰值速度平滑降到「当前该有的速度」\n\n" +
+                 "★ 这个目标是**实时**算的 —— 玩家在闪避期间按住 Shift / Ctrl，\n" +
+                 "  减速段就降到冲刺 / 潜行速度，否则降到走路速度。")]
+        [Min(0f)] public float dodgeDecelTime = 0.2f;
+
+        [Tooltip("闪避时的速度 = 走路速度 × 这个倍数")]
+        [Min(1f)] public float dodgeSpeedMultiplier = 5f;
+
+        [Tooltip("闪避期间玩家轮廓的不透明度（1 = 正常，0.5 = 半透明）")]
+        [Range(0.05f, 1f)] public float dodgeAlpha = 0.1f;
+
+        [Tooltip("闪避期间描边的亮度倍率。\n\n" +
+                 "★ 玩家的 EchoOutline 默认 _Glow = 2.0，描边会过曝成纯白，\n" +
+                 "  即使 alpha 很低也看得见一圈白边。闪避时降到 1.0 才能真正变淡。")]
+        [Range(0f, 4f)] public float dodgeGlow = 0.2f;
+
+        // ★★ 充能制：取代原来的冷却 ★★
+        //
+        //   需求："去掉cd，改成充能。充能的基础单位为0.1s，满充能时能量为2s。
+        //         使用闪避会消耗充能，单击左alt会立即消耗0.5s充能，
+        //         这也是每次使用技能时至少会消耗的能量。"
+        //
+        //   ★ 只要能量 >= 0.5s 就能按左 Alt。
+
+        [Header("地牢模式 · 闪避充能")]
+        [Tooltip("★ 每次使用闪避时**至少**要消耗的能量（秒）。\n\n" +
+                 "需求：0.5 秒。能量 >= 这个值才能按左 Alt。")]
+        [Min(0.1f)] public float minDodgeEnergy = 0.5f;
+
+        [Tooltip("★ 满充能 = 多少秒。需求：2.0 秒")]
+        [Min(0.1f)] public float maxDodgeEnergy = 2.0f;
+
+        [Tooltip("★ 每次充能增加多少秒。需求：0.1 秒（也是充能的基础单位）")]
+        [Min(0.01f)] public float dodgeChargePerTick = 0.1f;
+
+        [Tooltip("★ 充能间隔表：能量越高充能越快。\n\n" +
+                 "数组含义：从能量高点往下每 0.3s 一档，依次对应间隔。\n" +
+                 "  能量 1.5~2.0 -> 0.2s\n" +
+                 "  能量 1.2~1.4 -> 0.3s\n" +
+                 "  能量 0.9~1.1 -> 0.4s\n" +
+                 "  能量 0.6~0.8 -> 0.5s\n" +
+                 "  能量 0.3~0.5 -> 0.6s\n" +
+                 "  能量 0.0~0.2 -> 0.7s")]
+        public float[] dodgeChargeIntervals = new float[]
+        {
+            0.2f,   // 能量 >= 1.5
+            0.3f,   // 能量 >= 1.2
+            0.4f,   // 能量 >= 0.9
+            0.5f,   // 能量 >= 0.6
+            0.6f,   // 能量 >= 0.3
+            0.7f,   // 能量 <  0.3
+        };
+
+        /// <summary>每次闪避至少需要的能量（秒）。走 Inspector 上的 minDodgeEnergy。</summary>
+        public float MinDodgeEnergy => Mathf.Max(0.1f, minDodgeEnergy);
+
+        [Header("地牢模式 · 空格声波冷却")]
+        [Tooltip("空格（跺脚发声）的冷却（秒）。\n\n" +
+                 "★ 只在地牢模式生效；探秘模式的空格没有冷却。")]
+        [Min(0f)] public float dungeonShoutCooldown = 3.5f;
+
+        /// <summary>闪避是否正在进行。</summary>
+        public bool IsDodging => Time.timeSinceLevelLoad < m_DodgeUntil;
+
+        /// <summary>当前闪避能量（秒，0.1s 精度）。</summary>
+        public float DodgeEnergy => m_DodgeEnergy;
+
+        /// <summary>满充能（秒）。</summary>
+        public float DodgeEnergyMax => Mathf.Max(0.1f, maxDodgeEnergy);
+
+        /// <summary>能量占用比例 0~1（给 HUD 画充能条）。</summary>
+        public float DodgeEnergy01 => Mathf.Clamp01(m_DodgeEnergy / DodgeEnergyMax);
+
+        /// <summary>能否使用闪避（能量 >= 最小消耗）。</summary>
+        public bool DodgeReady => CanStartDodge();
+
+        /// <summary>当前充能间隔（秒）。</summary>
+        public float DodgeChargeInterval => ChargeIntervalFor(m_DodgeEnergy);
+
+        /// <summary>距离下一次充能还剩多少秒（给 HUD 用）。</summary>
+        public float DodgeChargeCountdown =>
+            Mathf.Max(0f, DodgeChargeInterval - m_ChargeAccum);
+
+        /// <summary>空格声波剩余冷却（秒），0 = 可用。给 HUD 用。</summary>
+        public float ShoutCooldownRemaining =>
+            Mathf.Max(0f, m_NextShoutTime - Time.timeSinceLevelLoad);
+
+        /// <summary>
+        /// 【地牢模式】刷新技能状态（换地图 / 重新开始时调用）。
+        ///
+        /// ★ 闪避改成充能制后：直接把能量充满。
+        /// ★ 空格声波的冷却照旧清掉。
+        /// </summary>
+        public void ResetDungeonCooldowns()
+        {
+            if (!GameUI.IsDungeonMode) return;
+
+            float now = Time.timeSinceLevelLoad;
+
+            m_NextShoutTime = now;        // 空格立即可用
+
+            // 闪避：能量拉满
+            m_DodgeEnergy = DodgeEnergyMax;   // 属性，走 Inspector 上的 maxDodgeEnergy
+            m_ChargeAccum = 0f;
+
+            // 正在闪避的话，直接结束（并恢复材质）
+            if (IsDodging)
+            {
+                m_DodgeUntil       = now;
+                m_DodgeCharging    = false;
+                m_DodgeHoldExtend  = 0f;
+                m_DodgeHoldCurrent = dodgeHoldTime;
+
+                ExitDodgeVisual();
+            }
+        }
+        /// <summary>空格冷却总量。</summary>
+        public float ShoutCooldownTotal => Mathf.Max(0.01f, dungeonShoutCooldown);
+
+        /// <summary>闪避结束时刻。</summary>
+        private float m_DodgeUntil;
+
+        /// <summary>本次闪避已经延长了多少秒（0 = 单击）。</summary>
+        private float m_DodgeHoldExtend;
+
+        /// <summary>本次闪避当前的维持段时长（dodgeHoldTime + 延长量）。</summary>
+        private float m_DodgeHoldCurrent;
+
+        /// <summary>
+        /// 当前闪避是否还允许继续延长。
+        ///
+        /// ★ 从按下 Alt 起为 true，直到**无敌帧结束**（而不是松手）才变 false。
+        /// </summary>
+        private bool m_DodgeCharging;
+
+        /// <summary>闪避开始时刻（三段式曲线的时间原点）。</summary>
+        private float m_DodgeStartTime;
+
+        /// <summary>按下闪避那一刻的水平速度大小 —— 加速段的起点。</summary>
+        private float m_DodgeStartSpeed;
+
+        /// <summary>
+        /// 当前闪避能量（秒，0.1s 精度，0..maxDodgeEnergy）。
+        ///
+        /// ★ 用字段初始化器给满值：Awake 里有多个 return 分支，
+        ///   写在那里可能被跳过。
+        /// </summary>
+        private float m_DodgeEnergy = 2f;
+
+        /// <summary>充能累加器：攒够一个间隔就 +0.1s 能量。</summary>
+        private float m_ChargeAccum;
+
+        /// <summary>下次可以空格发声的时刻。</summary>
+        private float m_NextShoutTime;
+
+        /// <summary>闪避期间的轮廓不透明度备份（-1 = 当前没在改）。</summary>
+        private float m_SavedOutlineAlpha = -1f;
 
         [Header("按 R 复位相机")]
         [Tooltip("触发相机复位的按键")]
@@ -732,11 +1648,32 @@ namespace EchoPuzzle
                 return;
             }
 
+            // ★★ 地牢模式正交俯视：**水平和俯仰都锁死** ★★
+            //
+            //   需求原文："水平角度锁死，我需要能在文件中调整水平角的数值"。
+            //   朝向完全由 dungeonCameraYaw 决定（见 LateUpdateDungeonTopDown），
+            //   这里连 m_Pitch / m_Yaw 都不再被鼠标改动。
+            if (IsDungeonTopDown)
+            {
+                m_WasLooking = false;
+                return;
+            }
+
             // ★ 投掷瞄准时**不转视角**。
             //   瞄准是用鼠标拖动的：以按下右键的位置为原点算角度和力度，
             //   如果这里同时还在转镜头，鼠标一动视角就飘了，根本没法瞄。
             var thrower = StoneThrowSystem.Instance;
             if (thrower != null && thrower.IsAiming)
+            {
+                m_WasLooking = false;
+                return;
+            }
+
+            // ★ 地牢模式枪械瞄准时同样不转视角 —— 鼠标改为绕玩家旋转武器。
+            //   写法和上面两条完全一样：拿不到 Instance（探秘模式下永远是 null）
+            //   就整段跳过，所以探秘模式的镜头行为没有改变。
+            var gun = Dungeon.DungeonWeapon.Instance;
+            if (gun != null && gun.IsAiming)
             {
                 m_WasLooking = false;
                 return;
@@ -771,8 +1708,11 @@ namespace EchoPuzzle
             float scroll = Input.GetAxisRaw("Mouse ScrollWheel");
             if (Mathf.Abs(scroll) < 0.0001f) return;
 
-            cameraDistance = Mathf.Clamp(cameraDistance - scroll * zoomStep * 10f,
-                                         zoomMin, zoomMax);
+            // ★ 地牢模式：cameraDistance 表示"正交体高度"，量程也不同
+            float lo = IsDungeonTopDown ? Mathf.Max(1f, dungeonZoomMin) : zoomMin;
+            float hi = IsDungeonTopDown ? Mathf.Max(lo + 0.1f, dungeonZoomMax) : zoomMax;
+
+            cameraDistance = Mathf.Clamp(cameraDistance - scroll * zoomStep * 10f, lo, hi);
 
             NoteAction(PlayerAction.Zoom);
         }
@@ -783,7 +1723,22 @@ namespace EchoPuzzle
             bool wantSneak = Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl)
                           || Input.GetKey(KeyCode.C);
 
-            Mode = wantSneak ? MoveMode.Sneak : (wantRun ? MoveMode.Run : MoveMode.Walk);
+            // ★★ 闪避期间：**暂时退出冲刺 / 潜行** ★★
+            //
+            //   需求原文："我希望在按住shift或ctrl时按左alt时，会暂时退出冲刺、
+            //             潜行模式，等0.5秒后闪避结束时再重新生效。"
+            //
+            //   做法：闪避中把 Mode 强制成 Walk。
+            //   玩家按住 Shift/Ctrl 的状态**没有丢**（wantRun / wantSneak 仍然算了），
+            //   只是闪避这 0.5 秒不用它 —— 闪避结束那一帧自动恢复，
+            //   因为这里的判断每帧都会重新跑。
+            //
+            //   ★ 注意：下面还要单独算一个 "naturalSpeed"（当前该有的速度），
+            //     闪避减速段的目标就是它 —— 所以这里即使把 Mode 改成 Walk，
+            //     也不会影响减速段落到冲刺 / 潜行速度。
+            Mode = IsDodging
+                 ? MoveMode.Walk
+                 : (wantSneak ? MoveMode.Sneak : (wantRun ? MoveMode.Run : MoveMode.Walk));
 
             float sneakNow = sneakSpeed;
 
@@ -800,13 +1755,40 @@ namespace EchoPuzzle
                 sneakNow = Mathf.Lerp(sneakSpeed, sneakSpeed * Mathf.Max(1f, sneakBoostMultiplier), k);
             }
 
-            float speed = Mode == MoveMode.Sneak ? sneakNow
-                        : Mode == MoveMode.Run   ? runSpeed
-                        : walkSpeed;
+            // ★★ 闪避的峰值速度：固定 = 走路速度 × dodgeSpeedMultiplier（默认 17）★★
+            float dodgePeak = walkSpeed * Mathf.Max(1f, dodgeSpeedMultiplier);
+
+            // ★★ "当前该有的速度" —— **不论是否在闪避**，都按玩家此刻的按键算 ★★
+            //
+            //   闪避减速段的目标就是它，所以玩家在闪避期间按住 Shift，
+            //   减速段最后会落到冲刺速度。
+            float naturalSpeed = wantSneak ? sneakNow
+                               : wantRun   ? runSpeed
+                               : walkSpeed;
+
+            // ★★ 闪避的三段式移速曲线 ★★
+            //
+            //   加速 dodgeAccelTime -> 维持 dodgeHoldTime -> 减速 dodgeDecelTime
+            //   加速段从**进闪避那一刻的速度**平滑升到 dodgePeak；
+            //   减速段从 dodgePeak 平滑降到 naturalSpeed。
+            float speed;
+
+            if (IsDodging)
+            {
+                speed = DodgeSpeedAt(Time.timeSinceLevelLoad, dodgePeak, naturalSpeed);
+            }
+            else
+            {
+                speed = naturalSpeed;
+            }
 
             // ★ 受惊死亡倒计时期间：**只能以很慢的速度移动**（默认 0.4 m/s）
             float cap = GameUI.FrightenedMoveSpeed;
             if (speed > cap) speed = cap;
+
+            // ★ 闪避结束后不瞬移速度 —— 交给上面那句统一的 MoveTowards
+            //   用走路同样的 accel 自然减速到当前模式的速度。
+            m_WasDodging = IsDodging;
 
             float h = Input.GetAxisRaw("Horizontal");
             float v = Input.GetAxisRaw("Vertical");
@@ -816,19 +1798,64 @@ namespace EchoPuzzle
 
             if (Mathf.Abs(h) > 0.01f || Mathf.Abs(v) > 0.01f)
             {
-                // 用相机朝向决定"前"
-                Vector3 fwd = m_CamPivot != null ? m_CamPivot.forward : transform.forward;
-                fwd.y = 0f;
+                // ★★ "前"方向的来源 ★★
+                //
+                //   · 探秘模式：用相机朝向（枢轴前向）—— 原来就是这样
+                //   · 地牢正交俯视：枢轴前向是**正下方**（俯仰 90°），
+                //     投影到水平面后长度为 0，没法用！
+                //     这时改用 dungeonCameraYaw 算出的水平前向，
+                //     也就是"屏幕上的上方"在地面里的方向，
+                //     这样 W 永远是往画面上方走。
+                Vector3 fwd;
+
+                if (IsDungeonTopDown)
+                {
+                    float yawRad = dungeonCameraYaw * Mathf.Deg2Rad;
+                    fwd = new Vector3(Mathf.Sin(yawRad), 0f, Mathf.Cos(yawRad));
+                }
+                else
+                {
+                    fwd = m_CamPivot != null ? m_CamPivot.forward : transform.forward;
+                    fwd.y = 0f;
+                }
+
                 if (fwd.sqrMagnitude < 1e-6f) fwd = Vector3.forward;
                 fwd.Normalize();
 
                 Vector3 right = Vector3.Cross(fwd, Vector3.up).normalized;
 
                 Vector3 world = (fwd * v + right * h).normalized * speed;
-                m_HorizontalVelocity = Vector3.MoveTowards(m_HorizontalVelocity, world, accel * Time.deltaTime);
+
+                // ★ 闪避期间 speed 本身已经是三段式平滑曲线，
+                //   所以这里**直接赋值**，不再叠一层 MoveTowards
+                //   （否则两套加速度会互相干扰）。
+                if (IsDodging)
+                    m_HorizontalVelocity = world;
+                else
+                    m_HorizontalVelocity = Vector3.MoveTowards(m_HorizontalVelocity, world, accel * Time.deltaTime);
+
                 IsMoving = true;
 
                 // 只在"从静止 -> 开始走"的那一帧记一次
+                if (!m_WasMoving) NoteAction(PlayerAction.Move);
+            }
+            else if (IsDodging)
+            {
+                // ★ 闪避期间**即使没有按下方向键**也朝闪避方向冲
+                //
+                //   需求原文："玩家如果在按下左alt后的这0.5秒里没有按方向键，
+                //             则默认朝玩家朝向移动。"
+                //
+                //   m_DodgeDirection 是在按下 Alt 那一刻定好的：
+                //     · 当时有方向键 -> 朝输入方向
+                //     · 当时没方向键 -> 朝玩家正面（CurrentMoveDirection 的兜底）
+                //   而 speed 用的就是上面算好的闪避速度
+                //   （= walkSpeed × dodgeSpeedMultiplier，默认 3.4 × 5 = 17 m/s）。
+                // ★ 闪避期间即使没按方向键也朝闪避方向冲。
+                //   speed 已经是三段式曲线，直接赋值即可。
+                m_HorizontalVelocity = m_DodgeDirection * speed;
+                IsMoving = true;
+
                 if (!m_WasMoving) NoteAction(PlayerAction.Move);
             }
             else
@@ -847,11 +1874,16 @@ namespace EchoPuzzle
             m_Controller.Move((m_HorizontalVelocity + Vector3.up * m_VerticalVelocity) * Time.deltaTime);
 
             // 角色面朝移动方向
+            //
+            // ★ 转向也用 walkTurnLerp 这个系数 ——
+            //   闪避时速度是 17 m/s，但转身的角加速度和走路时**完全一样**，
+            //   不会因为跑得快就"瞬间掉头"。
             Vector3 flat = m_HorizontalVelocity;
             flat.y = 0f;
             if (flat.sqrMagnitude > 0.05f)
                 transform.rotation = Quaternion.Slerp(transform.rotation,
-                    Quaternion.LookRotation(flat.normalized, Vector3.up), 12f * Time.deltaTime);
+                    Quaternion.LookRotation(flat.normalized, Vector3.up),
+                    walkTurnLerp * Time.deltaTime);
         }
 
         private void HandleStrideNoise()
@@ -1028,9 +2060,47 @@ namespace EchoPuzzle
             return cameraHeight + maxZoomExtraHeight * extra;
         }
 
+        /// <summary>地牢模式是否正在用正交俯视相机。</summary>
+        public bool IsDungeonTopDown =>
+            dungeonOrthographicCamera && GameUI.IsDungeonMode;
+
+        /// <summary>
+        /// 地牢模式：把"屏幕坐标"转成"地面上的世界坐标"。
+        ///
+        /// ★ 正交俯视下这一步很直接：从相机沿射线打到 y = 0 的水平面即可。
+        ///   给武器准星 / 武器瞄准用（武器朝鼠标所指的那个地面点）。
+        /// </summary>
+        /// <param name="screenPos">Input.mousePosition 那种屏幕坐标</param>
+        /// <param name="groundY">地面高度，默认 0</param>
+        /// <param name="world">输出的世界坐标</param>
+        public bool ScreenToGround(Vector3 screenPos, out Vector3 world, float groundY = 0f)
+        {
+            world = Vector3.zero;
+
+            if (playerCamera == null) playerCamera = Camera.main;
+            if (playerCamera == null) return false;
+
+            Ray ray = playerCamera.ScreenPointToRay(screenPos);
+
+            // 正交相机：ray.origin 就在屏幕上对应的位置，direction 就是相机前向（正下方）
+            var plane = new Plane(Vector3.up, new Vector3(0f, groundY, 0f));
+
+            if (!plane.Raycast(ray, out float dist)) return false;
+
+            world = ray.GetPoint(dist);
+            return true;
+        }
+
         private void LateUpdate()
         {
             if (m_CamPivot == null) return;
+
+            // ★★ 地牢模式：走正交俯视分支，和下面的透视逻辑完全分开 ★★
+            if (IsDungeonTopDown)
+            {
+                LateUpdateDungeonTopDown();
+                return;
+            }
 
             // 拉远时把镜头抬高：房间高的话平视会让顶部出画、地板下方空一大片。
             // 拉近时（距离 <= zoomHeightStart）完全不抬，保持看角色的低视角。
@@ -1083,8 +2153,95 @@ namespace EchoPuzzle
             }
         }
 
+        // ------------------------------------------------------------------ 地牢模式：正交俯视
+
+        /// <summary>
+        /// 地牢模式的相机后处理：正交、垂直向下、水平角固定。
+        ///
+        /// ★ 和上面那段透视逻辑完全独立 —— 探秘模式一行都不受影响。
+        ///
+        /// 组成：
+        ///   · 枢轴跟着玩家（平滑），枢轴的高 = dungeonCameraHeight
+        ///   · 枢轴朝向 = 俯仰 90°（正下方）+ dungeonCameraYaw（固定水平角）
+        ///   · 相机在枢轴正下方？不 —— 正交相机直接放在枢轴上方往下看更直观：
+        ///     相机位置 = 玩家正上方 dungeonCameraHeight，朝正下方
+        ///   · 正交尺寸由滚轮控制（dungeonZoomMin ~ dungeonZoomMax）
+        /// </summary>
+        private void LateUpdateDungeonTopDown()
+        {
+            // ---- 1) 正交 / 透视切换（只在模式变化时才真正赋值）----
+            ApplyDungeonCameraMode(true);
+
+            if (playerCamera == null) return;
+
+            // ---- 2) 枢轴跟随玩家（水平平滑，高度固定）----
+            Vector3 target = transform.position + Vector3.up * Mathf.Max(1f, dungeonCameraHeight);
+
+            // ★ 换地图 / 重生时**立即吸附**，不做平滑
+            if (m_CameraSnapNextFrame)
+            {
+                m_CameraSnapNextFrame = false;
+                m_CamPivot.position = target;
+            }
+            else
+            {
+                float t = 1f - Mathf.Exp(-cameraLag * Time.deltaTime);
+                m_CamPivot.position = Vector3.Lerp(m_CamPivot.position, target, t);
+            }
+
+            // 高度不参与平滑 —— 否则拉远时人和画面不同步，看起来像在下坠
+            Vector3 p = m_CamPivot.position;
+            p.y = target.y;
+            m_CamPivot.position = p;
+
+            // ---- 3) 枢轴朝向：俯仰锁定 90°（垂直向下）+ 固定水平角 ----
+            //
+            //   ★ Rotate(90, yaw, 0) 的结果：
+            //       前向 = (sin(yaw)·0? ...) 具体是 —— 绕自身 X 轴再转 90°，
+            //       于是前向朝正下方，而"屏幕上方"由 yaw 决定。
+            //     换句话说 yaw 控制的是**画面绕竖直轴转多少**，
+            //     这正是"水平角"的含义。
+            m_CamPivot.rotation = Quaternion.Euler(90f, dungeonCameraYaw, 0f);
+
+            // ---- 4) 正交尺寸（缩放）----
+            playerCamera.orthographicSize =
+                Mathf.Clamp(cameraDistance, Mathf.Max(1f, dungeonZoomMin), Mathf.Max(1.1f, dungeonZoomMax));
+
+            // ---- 5) 相机位置 = 枢轴位置（正上方），朝向 = 枢轴朝向 ----
+            Transform ct = playerCamera.transform;
+            ct.position = m_CamPivot.position;
+            ct.rotation = m_CamPivot.rotation;
+        }
+
+        /// <summary>
+        /// 把 <see cref="playerCamera"/> 切到正交 / 透视。
+        ///
+        /// ★ 只在状态真的变化时才写，避免每帧重复赋值（会触发 URP 重建相机数据）。
+        /// </summary>
+        private void ApplyDungeonCameraMode(bool orthographic)
+        {
+            if (playerCamera == null) playerCamera = Camera.main;
+            if (playerCamera == null) return;
+
+            if (playerCamera.orthographic != orthographic)
+            {
+                playerCamera.orthographic = orthographic;
+
+                // 正交相机不需要很大的远裁剪面，但地牢相机在 60m 高，
+                // 覆盖到地面以下要留够余量
+                if (orthographic)
+                {
+                    if (playerCamera.nearClipPlane < 0.05f) playerCamera.nearClipPlane = 0.05f;
+                    if (playerCamera.farClipPlane < 200f)   playerCamera.farClipPlane = 200f;
+                }
+            }
+        }
+
         private void OnDestroy()
         {
+            ExitDodgeVisual();
+            if (m_DodgeMat != null) Destroy(m_DodgeMat);
+
             if (m_CamPivot  != null) Destroy(m_CamPivot.gameObject);
             if (m_AutoCamera != null) Destroy(m_AutoCamera);
             if (m_AutoSonar  != null) Destroy(m_AutoSonar);

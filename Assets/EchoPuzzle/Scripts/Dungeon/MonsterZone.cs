@@ -109,6 +109,53 @@ namespace EchoPuzzle.Dungeon
         [Tooltip("封锁用的立方体边长（米）")]
         [Min(0.1f)] public float barrierCellSize = 1f;
 
+        [Header("解除封锁时")]
+        [Tooltip("★ 触发怪物房、**封锁**时，是否播一次 Trigger 分类的随机音效。\n\n" +
+                 "★ 音效来自 Assets/Resources/AudioPack/Trigger/ 下的所有音频，\n" +
+                 "  每次随机挑一个（走 AudioSystem.Cue.Trigger）。")]
+        public bool playLockSound = true;
+
+        [Tooltip("★ 怪物潮结束、解除封锁时，是否播一次 Trigger 分类的随机音效。\n\n" +
+                 "★ 音效来自 Assets/Resources/AudioPack/Trigger/ 下的所有音频，\n" +
+                 "  每次随机挑一个（走 AudioSystem.Cue.Trigger）。")]
+        public bool playUnlockSound = true;
+
+        [Tooltip("★ 怪物潮结束、解除封锁时，是否在被视为 1 的出口门格子处各释放一次光带。")]
+        public bool emitUnlockSonar = true;
+
+        [Tooltip("★ 解除封锁时，在开放门口释放的光带参数。\n\n" +
+                 "★ 这套参数可以独立调，不影响玩家自己的脚步光带。")]
+        public SonarEmitSettings unlockSonar = new SonarEmitSettings
+        {
+            // ★ 这套参数可以独立调，不影响玩家自己的脚步光带
+            rayCount90      = 16,
+            rayCount30      = 0,
+            rayCount60      = 0,
+            diffuseCount15  = 0,
+            diffuseCount45  = 0,
+            diffuseCount75  = 0,
+            hemisphereCount = 0,
+
+            range           = 90f,
+            speed           = 9f,
+            trailSpacing    = 0.3f,
+            maxBounces      = 4,
+            bounceFalloff   = 0.65f,
+            bounceLifeLoss  = 0.35f,
+
+            lifetime        = 10f,
+            tailLinger      = 20f,
+            intensity       = 1f,
+            holdAlpha       = true,
+
+            color           = new Color(255f / 255f, 185f / 255f, 0f, 1f),
+            width           = 0.1f,
+        };
+
+        [Tooltip("★ 解封光带的**世界 Y 高度**（米）。需求：0.6\n\n" +
+                 "★ 这是绝对世界 Y 坐标，不是相对格子的偏移。")]
+        public float unlockSonarHeight = 0.8f;
+
         [Header("调试")]
         [Tooltip("没有订阅者时，等多久自动结束怪物潮（秒）。0 = 立刻结束")]
         [Min(0f)] public float autoFinishDelay = 3f;
@@ -194,7 +241,23 @@ namespace EchoPuzzle.Dungeon
             for (int i = 0; i < cells.Count; i++)
                 m_AllCells.Add(cells[i]);
 
-            Debug.Log($"[地牢] 怪物区已注册：{m_AllCells.Count} 个格子。");
+        }
+
+        /// <summary>
+        /// 【重开一局】清掉所有"已经打过"的进度。
+        ///
+        /// ★ 只清进度，不动格子布局（m_AllCells）——
+        ///   布局是地图生成时注册的，重开时地图会重新生成（RegisterCells 也会再跑一次）。
+        ///
+        /// ★ 同时解锁所有被锁的区域、清掉屏障，免得上一局锁着的门带到新一局。
+        /// </summary>
+        public void ResetProgress()
+        {
+            m_Consumed.Clear();
+            m_Locked.Clear();
+            m_PendingWaves = 0;
+
+            ClearBarriers();
         }
 
         // ------------------------------------------------------------------ 进入
@@ -218,6 +281,18 @@ namespace EchoPuzzle.Dungeon
 
             BuildBarriers(region);
 
+            // ★★ 封锁墙建好后立刻重烘一次 NavMesh ★★
+            //
+            //   原因：NavMesh 是“烘焙快照”，运行中新生成的封锁墙不会自动进入它。
+            //   不重烘的话，NavMesh 里仍然是一整片连续可走地面 ——
+            //   怪物会把“射击位 / 巡逻点”选到封锁区外面，然后被物理墙顶住，
+            //   表现为贴墙抖动、卡死。
+            //
+            //   NavMeshRuntimeBaker 的规则：非地板（y 不是 0/8、不是斜坡）的
+            //   一切有碰撞体网格都按 NotWalkable 处理，
+            //   所以这里刚生成的 0.2 厚封锁墙会被正确“挖”成障碍。
+            NavMeshRuntimeBaker.Rebuild();
+
             // ---- 4) 算中心（给怪物潮刷怪用）----
             Vector3 center = Vector3.zero;
             for (int i = 0; i < region.Count; i++)
@@ -225,7 +300,6 @@ namespace EchoPuzzle.Dungeon
             center /= Mathf.Max(1, region.Count);
             center.y = 1f;
 
-            Debug.Log($"[地牢] 进入怪物区：{region.Count} 个格子，封锁开始。");
 
             // ---- 5) 广播怪物潮事件 ----
             TriggerWave(region, center);
@@ -235,6 +309,13 @@ namespace EchoPuzzle.Dungeon
         private void TriggerWave(List<Vector2Int> region, Vector3 center)
         {
             m_PendingWaves++;
+
+            // ★★ 封锁瞬间的音效 ★★
+            //
+            //   需求："在触发怪物房封锁时和解除封锁时一样都会播放一个 Trigger
+            //         文件夹的随机音效。"
+            if (playLockSound)
+                AudioSystem.Play(AudioSystem.Cue.Trigger);
 
             var args = new MonsterZoneArgs(region, center, m_CellSize, OnWaveFinished);
 
@@ -247,7 +328,6 @@ namespace EchoPuzzle.Dungeon
             {
                 // ★ 没有订阅者（还没接怪物潮）：按 autoFinishDelay 自动结束，
                 //   这样流程能先跑通。
-                Debug.Log("[地牢] 没有订阅者处理怪物潮，按自动延时解除封锁。");
                 StartCoroutine(AutoFinish(args));
             }
         }
@@ -268,10 +348,168 @@ namespace EchoPuzzle.Dungeon
             // 还有别的怪物潮在跑 -> 先不解除
             if (m_PendingWaves > 0) return;
 
+            // ★★ 先拍下此刻锁定的区域（清空 m_Locked 之后就拿不到了）★★
+            var unlockedRegion = new List<Vector2Int>(m_Locked);
+
             m_Locked.Clear();
             ClearBarriers();
 
-            Debug.Log("[地牢] 怪物潮结束，封锁解除。");
+            // ★★ 解除封锁的表现：音效 + 出口门光带 ★★
+            //
+            //   需求：
+            //     1) 播放 AudioPack/Trigger 里的随机音效
+            //     2) 该房间**所有被视为 1 的 4 单元格**各释放一次光带
+            if (playUnlockSound)
+                AudioSystem.Play(AudioSystem.Cue.Trigger);
+
+            // ★★ 封锁解除后也要重烘一次 ★★
+            //
+            //   墙是 Destroy（延迟到帧末才真正销毁）的，
+            //   如果立刻重烘，封锁墙还在场景里，NavMesh 会继续把它们当障碍，
+            //   “洞”会保留下来 —— 怪物以后会绕开一片已经不存在的墙。
+            //   所以等一帧，确认墙已经销毁，再重建 NavMesh。
+            //
+            // ★★ 光带也放到**等一帧之后**再发 ★★
+            //
+            //   原因：封锁墙高 6 米（y = 0..6），而解封光带在 y = 0.6~0.8。
+            //   Destroy 是延迟到帧末的，如果在 ClearBarriers() 之后**当帧**
+            //   就发光线，声波一出生就会被仍在地图上的封锁墙吞掉 ——
+            //   在门口根本看不到任何光带。
+            if (emitUnlockSonar)
+                StartCoroutine(EmitUnlockSonarAfterBarriersGone(unlockedRegion));
+
+            StartCoroutine(RebuildNavMeshNextFrame());
+
+        }
+
+        /// <summary>
+        /// 解除封锁时，在所有**带标记的出口门格子**（矩阵值 = 5）处各释放一次光带。
+        ///
+        /// ★ 需求："等到怪物潮结束后，带有这个标记的格子全部会在 y=0.8 处发射声波。"
+        ///
+        ///   就是遍历一遍标记格子，每格发一个声波。不分走廊、不分段。
+        /// </summary>
+        private void EmitUnlockSonar(List<Vector2Int> region)
+        {
+            SonarSystem sonar = FindObjectOfType<SonarSystem>();
+            if (sonar == null) return;
+
+            // ★ 所有带标记的门格子（全图）
+            List<Vector2Int> gateCells = DungeonMapGenerator.FindOpenGateCells();
+
+
+            // 区域集合（用来判断某扇门属于哪个房间）
+            var inRegion = region != null ? new HashSet<Vector2Int>(region) : new HashSet<Vector2Int>();
+
+            float s = Mathf.Max(0.1f, m_CellSize);
+            float y = Mathf.Max(0f, unlockSonarHeight);
+
+            // 方位角起点：朝北（环境效果，不依赖玩家朝向）
+            Vector3 facing = Vector3.forward;
+
+            // ★★ 先把门格子分组，只保留"整条走廊里至少有一格挨着本房间"的那些 ★★
+            //
+            //   ⚠ 不能逐格用 IsAdjacentToRegion 过滤 —— 那样只有**紧挨怪物区
+            //     的那一格**能通过，走廊朝外延伸的其余格子全被丢掉。
+            //     （实测：一侧 6 格的走廊只发出 5 个、甚至更少）
+            //
+            //   ✔ 正确做法：门走廊是一个整体，
+            //     只要这条走廊里**任意一格**挨着本房间的怪物区，整条走廊都发光带。
+            var gateSet = new HashSet<Vector2Int>(gateCells);
+            var visited = new HashSet<Vector2Int>();
+            var toEmit = new List<Vector2Int>(gateCells.Count);
+
+            for (int i = 0; i < gateCells.Count; i++)
+            {
+                Vector2Int seed = gateCells[i];
+                if (visited.Contains(seed)) continue;
+
+                // ---- 取出一条完整走廊（4-邻接连通块）----
+                var comp = new List<Vector2Int>();
+                var stack = new Stack<Vector2Int>();
+                stack.Push(seed);
+                visited.Add(seed);
+
+                while (stack.Count > 0)
+                {
+                    Vector2Int c = stack.Pop();
+                    comp.Add(c);
+
+                    Vector2Int[] nb =
+                    {
+                        c + Vector2Int.right, c + Vector2Int.left,
+                        c + new Vector2Int(0, 1), c + new Vector2Int(0, -1),
+                    };
+
+                    for (int k = 0; k < 4; k++)
+                    {
+                        if (!gateSet.Contains(nb[k])) continue;
+                        if (!visited.Add(nb[k])) continue;
+                        stack.Push(nb[k]);
+                    }
+                }
+
+                // ---- 这条走廊挨着本房间吗 ----
+                bool belong = false;
+                for (int k = 0; k < comp.Count && !belong; k++)
+                    belong = IsAdjacentToRegion(comp[k], inRegion);
+
+                if (!belong) continue;
+
+                // ---- 整条走廊全部加入发射列表 ----
+                toEmit.AddRange(comp);
+            }
+
+            for (int i = 0; i < toEmit.Count; i++)
+            {
+                Vector2Int c = toEmit[i];
+
+                Vector3 world = new Vector3(c.x * s, y, c.y * s);
+
+                sonar.Emit(world, unlockSonar.ToEmitParams(facing));
+            }
+        }
+
+        /// <summary>
+        /// 这个格子的四邻里，有没有属于给定区域的格子。
+        /// </summary>
+        private static bool IsAdjacentToRegion(Vector2Int c, HashSet<Vector2Int> region)
+        {
+            if (region == null || region.Count == 0) return false;
+
+            if (region.Contains(c)) return true;
+            if (region.Contains(c + Vector2Int.right)) return true;
+            if (region.Contains(c + Vector2Int.left))  return true;
+            if (region.Contains(c + new Vector2Int(0,  1))) return true;
+            if (region.Contains(c + new Vector2Int(0, -1))) return true;
+
+            return false;
+        }
+
+        /// <summary>
+        /// 等一帧（让 ClearBarriers 的 Destroy 真正生效）后，
+        /// 再在门口释放解封光带。
+        ///
+        /// ★ 封锁墙 y 范围 0..6，而光带在 y≈0.8 ——
+        ///   不等到墙消失就发，声波会被墙直接挡掉。
+        /// </summary>
+        private IEnumerator EmitUnlockSonarAfterBarriersGone(List<Vector2Int> region)
+        {
+            // 两帧更保险：Destroy 在帧末处理，
+            // 再等一帧确保物理场景也已经刷新
+            yield return null;
+            yield return null;
+
+            EmitUnlockSonar(region);
+        }
+
+        /// <summary>
+        /// 等一帧再重烘 NavMesh（给 Destroy 留出真正销毁的时机）。
+        /// </summary>
+        private IEnumerator RebuildNavMeshNextFrame()
+        {
+            yield return null;
+            NavMeshRuntimeBaker.Rebuild();
         }
 
         // ------------------------------------------------------------------ 洪水填充

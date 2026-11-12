@@ -46,8 +46,6 @@ namespace EchoPuzzle
             // （否则会出现两个玩家、两套墙、两层屏幕文字）
             if (GameObject.Find("EchoPuzzle_Level") != null)
             {
-                Debug.Log("[EchoPuzzle] 场景里已经有菜单生成的 EchoPuzzle_Level，EchoBootstrap 自动跳过。\n" +
-                          "不需要自建关卡就请把本物体上的 EchoBootstrap 组件移除。");
                 enabled = false;
                 return;
             }

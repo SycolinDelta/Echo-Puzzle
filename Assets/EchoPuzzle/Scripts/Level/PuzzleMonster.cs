@@ -164,6 +164,99 @@ namespace EchoPuzzle
         [Tooltip("参与光带碰撞的层。默认排除 Ignore Raycast / Water / UI")]
         public LayerMask raycastMask = ~((1 << 2) | (1 << 4) | (1 << 5));
 
+        // ---------------------------------------------------------------- 光带（地牢模式）
+        //
+        // ★★ 地牢模式用**独立一套**光带参数，和探秘模式互不干扰 ★★
+        //
+        //   选择规则（运行时的 Beam* 属性统一判断）：
+        //     · 探秘模式  -> 上面那组 emitInterval / raysPerBurst / trail*
+        //     · 地牢模式  -> 下面这组 dungeon*
+        //
+        //   所以：
+        //     · 改上面那组，只影响探秘模式
+        //     · 改下面这组，只影响地牢模式
+        //
+        //   ★ 探秘模式**完全不会读**下面这些字段，
+        //     地牢模式也**完全不会读**上面那组（受惊参数除外，地牢没有受惊状态）。
+
+        [Header("怪物光带（地牢模式）")]
+        [Tooltip("每隔多久发一次（秒）。填 0 = 不自动发")]
+        [Min(0f)] public float dungeonEmitInterval = 0.45f;
+
+        [Tooltip("每次发几根")]
+        [Min(1)] public int dungeonRaysPerBurst = 6;
+
+        [Tooltip("初始不透明度（波前刚出现时）")]
+        [Range(0f, 1f)] public float dungeonTrailInitialAlpha = 0.85f;
+
+        [Tooltip("光带粗细（米）")]
+        [Min(0.001f)] public float dungeonTrailWidth = 0.10f;
+
+        [Tooltip("光带颜色")]
+        public Color dungeonTrailColor = new Color(1f, 0.35f, 0.15f, 1f);
+
+        [Tooltip("光带**本体**的淡出速度（1/秒）。越小残留越久")]
+        [Min(0f)] public float dungeonTrailBodyFadeSpeed = 1.2f;
+
+        [Tooltip("**波前**的淡出速度（1/秒）。应当大于本体的速度")]
+        [Min(0f)] public float dungeonTrailHeadFadeSpeed = 3.5f;
+
+        [Tooltip("单条光带最长铺多远（米）。撞墙会提前停，所以这只是上限")]
+        [Min(0.1f)] public float dungeonTrailMaxLength = 26f;
+
+        [Tooltip("采样间距（米）。越小越细腻，也越吃性能")]
+        [Min(0.05f)] public float dungeonTrailSpacing = 0.35f;
+
+        [Tooltip("波前推进速度（米/秒）。\n\n" +
+                 "探秘模式的算法是 moveSpeed * 4（默认 2.2 -> 8.8）。\n" +
+                 "地牢模式直接用本值，不再跟 moveSpeed 挂钩。")]
+        [Min(0.1f)] public float dungeonTrailSpeed = 8.8f;
+
+        // ---------------------------------------------------------------- 光带参数（按模式二选一）
+        //
+        // ★ 这一组是**只读**的运行时分发，所有发光 / 推进的地方都只读它们，
+        //   这样"选哪套参数"只在一个地方判断，不会漏掉某个调用点。
+
+        /// <summary>当前是不是地牢模式（决定读哪一套光带参数）。</summary>
+        private bool UseDungeonBeam => GameUI.IsDungeonMode;
+
+        /// <summary>发射间隔（秒）。</summary>
+        private float BeamEmitInterval => UseDungeonBeam ? dungeonEmitInterval : emitInterval;
+
+        /// <summary>每次发几根。</summary>
+        private int BeamRaysPerBurst => UseDungeonBeam ? dungeonRaysPerBurst : raysPerBurst;
+
+        /// <summary>初始不透明度。</summary>
+        private float BeamInitialAlpha => UseDungeonBeam ? dungeonTrailInitialAlpha : trailInitialAlpha;
+
+        /// <summary>光带粗细（米）。</summary>
+        private float BeamWidth => UseDungeonBeam ? dungeonTrailWidth : trailWidth;
+
+        /// <summary>光带颜色。</summary>
+        private Color BeamColor => UseDungeonBeam ? dungeonTrailColor : trailColor;
+
+        /// <summary>采样间距（米）。</summary>
+        private float BeamSpacing => UseDungeonBeam ? dungeonTrailSpacing : trailSpacing;
+
+        /// <summary>本体淡出速度（1/秒）。</summary>
+        private float BeamBodyFadeSpeed => UseDungeonBeam ? dungeonTrailBodyFadeSpeed : trailBodyFadeSpeed;
+
+        /// <summary>波前淡出速度（1/秒）。</summary>
+        private float BeamHeadFadeSpeed => UseDungeonBeam ? dungeonTrailHeadFadeSpeed : trailHeadFadeSpeed;
+
+        /// <summary>单条光带的最大长度（米）。</summary>
+        private float BeamMaxLength => UseDungeonBeam ? dungeonTrailMaxLength : trailMaxLength;
+
+        /// <summary>
+        /// 波前推进速度（米/秒）。
+        ///
+        /// 探秘模式沿用老算法 moveSpeed * 4（怪物越快，扫得越快）；
+        /// 地牢模式改成独立参数，避免"调怪物移速顺手把光带速度也改了"。
+        /// </summary>
+        private float BeamSpeed => UseDungeonBeam
+            ? Mathf.Max(0.1f, dungeonTrailSpeed)
+            : Mathf.Max(0.1f, moveSpeed) * 4f;
+
         // ---------------------------------------------------------------- 受惊状态
 
         [Header("受惊状态")]
@@ -304,7 +397,26 @@ namespace EchoPuzzle
         /// <summary>正在推进的怪物光带：下标 -> 发射方向。</summary>
         private struct LiveBeam
         {
-            public int     index;
+            /// <summary>
+            /// 渲染器返回的**稳定 ID**（不是列表下标）。
+            ///
+            /// ★ 渲染器淘汰光带时会回收槽位，下标会错位；
+            ///   只有 ID 才能保证"这条 SetLength 的确实是这一条"。
+            /// </summary>
+            public int     trailId;
+
+            /// <summary>
+            /// 这条光带的**发射起点**（世界坐标，发射瞬间记下来，之后不再变）。
+            ///
+            /// ★ 必须存自己的一份，不能每帧用 transform.position：
+            ///   怪物一边走一边发，光带本身在世界里是**钉死在 origin** 上的
+            ///   （MonsterTrailRenderer 也是按这个 origin 铺的）。
+            ///   如果撞墙检测拿"怪物当前位置"当起点，怪物走一步，
+            ///   检测起点就偏一步 —— 测出来的墙距比真实的长 / 短，
+            ///   光带长度就会忽长忽短，甚至穿墙。
+            /// </summary>
+            public Vector3 origin;
+
             public Vector3 dir;
             public float   length;      // 当前长度
             public bool    stopped;
@@ -637,15 +749,6 @@ namespace EchoPuzzle
             EnsureAgent();
 
             m_NextEmitTime = Time.timeSinceLevelLoad;
-
-            // 开局诊断：确认怪物确实出现在场景里
-            Vector3 p = transform.position;
-            string groundInfo = TryGetGroundY(out float gy)
-                ? string.Format("ground y={0:F2}, expect {1:F2}", gy, gy + floatHeight)
-                : "no ground found";
-
-            Debug.Log(string.Format("[EchoPuzzle] monster {0} at ({1:F2},{2:F2},{3:F2}), {4}",
-                name, p.x, p.y, p.z, groundInfo));
         }
 
         private void OnEnable()
@@ -921,11 +1024,17 @@ namespace EchoPuzzle
 
             try
             {
-                // 光带不再变色（改由 SenseSphereVisual 画球）
-                overrideColor = false;
-
-                if (GetComponent<EchoPuzzle.Dungeon.SenseSphereVisual>() == null)
-                    gameObject.AddComponent<EchoPuzzle.Dungeon.SenseSphereVisual>();
+                // ★★ 红色竖线机制已取消 ★★
+                //
+                //   需求原文："我们之前应该写了一个机制，在光带经过怪物变色球
+                //             和终点区域下方时会产生竖线，把这个机制给取消掉。"
+                //
+                //   所以这里不再挂 SenseSphereVisual，也把 overrideColor 恢复成
+                //   **开启** —— 地牢模式下光带经过变色球时仍然会变色
+                //   （和探秘模式一样），只是不再画竖线了。
+                //
+                //   ★ SenseSphereVisual.cs 文件保留着，以后想恢复只要把这行加回来。
+                overrideColor = true;
 
                 // ★ 血条（屏幕空间，画在怪物"相机视角的上方"）
                 if (GetComponent<EchoPuzzle.Dungeon.MonsterHealthBar>() == null)
@@ -963,10 +1072,14 @@ namespace EchoPuzzle
             }
 
             // 把 Inspector 上的参数同步给渲染器
-            trailRenderer.trailSpacing    = trailSpacing;
-            trailRenderer.bodyFadeSpeed   = trailBodyFadeSpeed;
-            trailRenderer.headFadeSpeed   = trailHeadFadeSpeed;
-            trailRenderer.maxLength       = trailMaxLength;
+            //
+            // ★ 用 Beam* 分发值：探秘模式读上面那组，地牢模式读 dungeon* 那组。
+            //   地牢的怪物是运行时创建的，这里就是它唯一一次初始化，
+            //   所以在出生时选对参数即可（运行中切模式不会复用同一只怪）。
+            trailRenderer.trailSpacing    = BeamSpacing;
+            trailRenderer.bodyFadeSpeed   = BeamBodyFadeSpeed;
+            trailRenderer.headFadeSpeed   = BeamHeadFadeSpeed;
+            trailRenderer.maxLength       = BeamMaxLength;
         }
 
         // ---------------------------------------------------------------- 不透明实体
@@ -1178,54 +1291,86 @@ namespace EchoPuzzle
         //   交给子弹机制：开火命中时调 DungeonTakeDamage(伤害值) 即可。
 
         [Header("地牢模式 · 血量")]
-        [Tooltip("地牢模式下怪物的最大血量。探秘模式不使用这个值")]
-        [Min(1)] public int dungeonMaxHealth = 12;
+        [Tooltip("地牢模式下怪物的最大血量。探秘模式不使用这个值。\n★ 支持小数（保留三位）")]
+        [Min(0.001f)] public float dungeonMaxHealth = 12f;
 
         [Tooltip("地牢模式下被打死时是否隐藏自己（走 Hide 机制）。勾掉则只是停止响应")]
         public bool dungeonHideOnDeath = true;
 
-        /// <summary>【地牢模式】当前血量。</summary>
-        public int DungeonHealth { get; private set; }
+        /// <summary>
+        /// 【地牢模式】当前血量。
+        ///
+        /// ★★ 是 **float**，保留三位小数 ★★
+        ///   需求："怪物血量…是否都能计算到三位小数。"
+        /// </summary>
+        public float DungeonHealth { get; private set; }
 
-        /// <summary>【地牢模式】最大血量。</summary>
-        public int DungeonMaxHealth => Mathf.Max(1, dungeonMaxHealth);
+        /// <summary>
+        /// 【地牢模式】最大血量。
+        ///
+        /// ★ 每过一层 ×1.25（由 <see cref="Dungeon.DungeonBuffState.StageScale"/> 提供）。
+        /// ★★ 保留三位小数（不再是向上取整成整数）★★
+        /// </summary>
+        public float DungeonMaxHealth
+        {
+            get
+            {
+                float baseHp = Mathf.Max(0.001f, dungeonMaxHealth);
+
+                // ★ StageScale 是**静态**属性：不依赖 Instance 是否已创建
+                float scale = Dungeon.DungeonBuffState.StageScale;
+
+                return Round3(Mathf.Max(0.001f, baseHp * scale));
+            }
+        }
 
         /// <summary>【地牢模式】血量比例（0~1），给血条画长度用。</summary>
-        public float DungeonHealth01 => Mathf.Clamp01((float)DungeonHealth / DungeonMaxHealth);
+        public float DungeonHealth01 => Mathf.Clamp01(DungeonHealth / DungeonMaxHealth);
 
         /// <summary>【地牢模式】已经死了。</summary>
         public bool DungeonIsDead { get; private set; }
 
         /// <summary>血量变化时触发（参数：当前血量，最大血量）。</summary>
-        public event System.Action<int, int> DungeonHealthChanged;
+        public event System.Action<float, float> DungeonHealthChanged;
 
         /// <summary>
         /// 【地牢模式】扣血。
         ///
         /// ★ 探秘模式调用它没有任何效果（那边没有血量概念）。
         /// ★ 已经死了再打也无效。
+        /// ★★ 伤害 / 血量都是 float，保留三位小数 ★★
         /// </summary>
-        public void DungeonTakeDamage(int amount)
+        public void DungeonTakeDamage(float amount)
         {
             if (!GameUI.IsDungeonMode) return;
             if (DungeonIsDead) return;
-            if (amount <= 0) return;
+            if (amount <= 0f) return;
 
-            DungeonHealth = Mathf.Max(0, DungeonHealth - amount);
+            // ★★ 刷出停顿期间无敌 ★★
+            //
+            //   需求："地牢模式的怪物在刷出时，会先停顿1.5秒再开始正常的行动。
+            //         这段时间里怪物持续无敌。"
+            //
+            //   DungeonEnemy 负责计时，这里只问它一句。
+            //   探秘模式没有 DungeonEnemy，m_DungeonEnemy 为 null，不受影响。
+            if (m_DungeonEnemy == null) m_DungeonEnemy = GetComponent<Dungeon.DungeonEnemy>();
+            if (m_DungeonEnemy != null && m_DungeonEnemy.IsSpawnInvulnerable) return;
+
+            DungeonHealth = Round3(Mathf.Max(0f, DungeonHealth - amount));
 
             DungeonHealthChanged?.Invoke(DungeonHealth, DungeonMaxHealth);
 
-            if (DungeonHealth <= 0) DungeonDie();
+            if (DungeonHealth <= 0f) DungeonDie();
         }
 
         /// <summary>【地牢模式】回血。</summary>
-        public void DungeonHeal(int amount)
+        public void DungeonHeal(float amount)
         {
             if (!GameUI.IsDungeonMode) return;
             if (DungeonIsDead) return;
-            if (amount <= 0) return;
+            if (amount <= 0f) return;
 
-            DungeonHealth = Mathf.Min(DungeonMaxHealth, DungeonHealth + amount);
+            DungeonHealth = Round3(Mathf.Min(DungeonMaxHealth, DungeonHealth + amount));
 
             DungeonHealthChanged?.Invoke(DungeonHealth, DungeonMaxHealth);
         }
@@ -1239,23 +1384,30 @@ namespace EchoPuzzle
             DungeonHealthChanged?.Invoke(DungeonHealth, DungeonMaxHealth);
         }
 
+        /// <summary>保留三位小数（顺便消掉 float 的表示误差）。</summary>
+        public static float Round3(float v)
+        {
+            return Mathf.Round(v * 1000f) / 1000f;
+        }
+
         /// <summary>【地牢模式】死亡。</summary>
         private void DungeonDie()
         {
             DungeonIsDead = true;
 
-            Debug.Log($"[地牢] 怪物死亡（{name}）。");
 
             // ★★ 死亡表现和探秘模式一致 ★★
             //
             //   探秘模式里玩家用匕首杀怪走的是 RemoveByBlade()，它做两件事：
-            //     1) AudioSystem.Play(AudioSystem.Cue.Death)   —— 死亡音效
+            //     1) AudioSystem.Play(AudioSystem.Cue.MonsterDead) —— 死亡音效
             //     2) EmitRemoveSonar()                          —— 在脚下炸一大片光带
             //
             //   地牢模式这里照搬这两件事，保证"怪物死掉"的反馈是一样的。
-            AudioSystem.Play(AudioSystem.Cue.Death);
+            AudioSystem.Play(AudioSystem.Cue.MonsterDead);
 
-            if (emitSonarOnRemove)
+            // ★ 地牢模式用自己那个开关（dungeonEmitDeathSonar），
+            //   探秘模式的 emitSonarOnRemove 不受影响
+            if (dungeonEmitDeathSonar)
             {
                 EmitRemoveSonar();
             }
@@ -1282,8 +1434,66 @@ namespace EchoPuzzle
         /// <summary>【地牢模式】最后一次捕捉到的玩家坐标。</summary>
         public Vector3 DungeonLastPlayerPos { get; private set; }
 
-        /// <summary>【地牢模式】有没有捕捉到过玩家。</summary>
-        public bool DungeonHasPlayerPos { get; private set; }
+        /// <summary>
+        /// 【地牢模式】玩家坐标是否已经"可知"。
+        /// </summary>
+        public bool DungeonPlayerKnown =>
+            m_DungeonEnemy != null && m_DungeonEnemy.DungeonPlayerFound == 1;
+
+        // ---- 地牢模式：移动接管 ----
+        //
+        // ★ DungeonEnemy 在 OnEnable 里把它置 true，声明"移动由我接管"。
+        //   探秘模式没有 DungeonEnemy，这个字段永远是 false。
+
+        /// <summary>缓存的地牢行为组件（没有则每帧重查一次，避免 AddComponent 时序问题）。</summary>
+        private Dungeon.DungeonEnemy m_DungeonEnemy;
+
+        [Header("地牢模式 · 行为接管")]
+        [Tooltip("true = 移动由 DungeonEnemy 接管（随机巡逻 / 寻路到可命中点）。\n探秘模式永远为 false")]
+        [System.NonSerialized] public bool DungeonMoveControlled;
+
+        /// <summary>
+        /// 【地牢模式】由 DungeonEnemy 设置巡逻 / 射击目标点。
+        /// 写入 m_Target / m_StopPoint，后续 MoveTowardTarget 会朝它走（NavMesh 寻路）。
+        /// </summary>
+        public void DungeonSetMoveTarget(Vector3 pos)
+        {
+            m_Target             = pos;
+            m_StopPoint          = pos;
+            m_TargetBirthTime    = Time.timeSinceLevelLoad;
+            m_HasTarget          = true;
+            m_TargetDirty        = true;
+
+            // ★★ 千万不要碰 m_LastSonarBirthTime ★★
+            //
+            //   它是"已处理光带的时间水位线"，SetTarget() 里靠它去重：
+            //       if (birthTime <= m_LastSonarBirthTime) return;
+            //
+            //   这里如果把它推进到当前时间，后续真正的光带
+            //   （birthTime 更早）就会被**全部拒绝** ——
+            //   表现为"光带进入感知范围，怪物毫无反应"。
+            //
+            //   DungeonSetMoveTarget 是**我们自己的移动指令**，
+            //   和光带无关，绝不能影响这个水位线。
+        }
+
+        /// <summary>【地牢模式】当前是否有一个由 DungeonEnemy 设定的移动目标。</summary>
+        public bool DungeonHasMoveTarget => m_HasTarget;
+
+        /// <summary>【地牢模式】当前的移动目标点（没有时返回自身位置）。</summary>
+        public Vector3 DungeonMoveTarget => m_HasTarget ? m_StopPoint : transform.position;
+
+        /// <summary>【地牢模式】清除移动目标（原地停下，重力 / 悬浮照常）。</summary>
+        public void DungeonClearMoveTarget()
+        {
+            m_HasTarget = false;
+
+            if (m_Agent != null && m_Agent.isActiveAndEnabled &&
+                m_Agent.isOnNavMesh && m_Agent.hasPath)
+            {
+                m_Agent.ResetPath();
+            }
+        }
 
         /// <summary>
         /// 【地牢模式】只做重力 / 悬浮，**不做水平移动**。
@@ -1331,7 +1541,7 @@ namespace EchoPuzzle
         ///   需要的接口都在下面：
         ///     · <see cref="DungeonPatrolTarget"/>  —— 怪物现在盯着的点（可能为空）
         ///     · <see cref="DungeonLastPlayerPos"/> —— 最后一次捕捉到的玩家坐标
-        ///     · <see cref="DungeonHasPlayerPos"/>  —— 有没有捕捉到过
+        ///     · <see cref="DungeonPlayerKnown"/>  —— 是否已经知道玩家在哪
         ///
         ///   想在这里接开火逻辑，直接在 UpdateDungeonMode 末尾加即可。
         /// </summary>
@@ -1343,46 +1553,117 @@ namespace EchoPuzzle
             //      改由下面的 DungeonPatrolTarget 给别的系统读。
             CaptureSonarSource();
 
-            // ---- 2) 把捕捉到的玩家坐标单独记一份（供子弹机制用）----
+            // ---- 2) 记录"是否已经知道玩家在哪" ----
             //
-            //   CaptureSonarSource 里如果捕捉到的是玩家脚步，
-            //   m_LastPlayerSonarTime 会被刷新。这里据此认定"发现玩家"。
+            // ★★ 原来的写法是：
+            //      if (m_HasTarget && m_Target != Vector3.zero)
+            //          DungeonLastPlayerPos = m_Target;      // ← 错！
+            //
+            //    但 m_Target 在地牢模式里**只有一个写入点**：
+            //      DungeonSetMoveTarget()  —— 怪物**自己的移动目标**
+            //    （CaptureSonarSource 在地牢模式走不到 ChasePlayerDirectly，
+            //      因为 keepChasing 默认 false、captured 恒为 0）
+            //
+            //    结果就是：怪物的"玩家坐标"被污染成它自己上一帧的目标点。
+            //    DungeonEnemy 拿这个假坐标做视线检测 / 选点，
+            //    于是怪物会朝自己走过的点跑 —— 玩家移动之后就更明显。
+            //
+            // ★ 现在改成：
+            //     · 玩家坐标**每帧从 Player 实时取**，和光带 / m_Target 完全无关
+            //     · "是否已捕捉到玩家"由 DungeonEnemy 自己判断
+        //       （它看 DungeonPlayerKnown，这里只负责在捕捉到光带时置位）
             if (m_HasTarget && m_Target != Vector3.zero)
             {
-                DungeonPatrolTarget  = m_Target;
-                DungeonHasPlayerPos  = true;
-                DungeonLastPlayerPos = m_Target;
+                // ★ 只作为"巡逻目标"参考，**不再**当作玩家坐标
+                DungeonPatrolTarget = m_Target;
             }
 
-            // ---- 3) 追击玩家（但**不击杀**）----
+            // ---- 2.5) 地牢模式：判定"是否已经捕捉到玩家光带" ----
             //
-            //   ★ 现在恢复成"会追玩家"，方便测试移动效果。
+            // ★★ 只有**第一次**捕捉到光带时才置位 ★★
             //
-            //   追的方式和探秘模式一样：
-            //     · 捕捉到声源后 m_Target / m_StopPoint 已经被填好
-            //     · MoveTowardTarget 朝 m_StopPoint 走（NavMesh 寻路）
+            //   捕捉成功的唯一标志是 m_LastSonarBirthTime 被 SetTarget() 推进过
+            //   （NegativeInfinity 说明从来没捕捉到过任何光带）。
             //
-            //   ★ 但要**不击杀** —— 所以下面那个 BodyTouchesPlayer() 的分支
-            //     在地牢模式永远不会执行（这个方法里根本没有击杀判定）。
-            MoveTowardTarget();
+            //   一旦置为 true：
+            //     · DungeonEnemy.DungeonPlayerFound 会跟着变成 1
+            //     · 之后**每帧**从 m_Player 取实时坐标
+            //     · 再捕捉到光带也不改变任何东西（坐标本来就已经是实时的）
+            //   一旦这只怪第一次捕捉到光带 -> 它自己的 DungeonPlayerFound 置 1。
+            //
+            //   ★ 注意：只有**这只**怪置 1。
+            //     其它没被光带扫到的怪仍然是 0，继续静止 ——
+            //     直到玩家开火（那时所有怪一起置 1，见 DungeonWeapon）。
+            if (m_DungeonEnemy == null)
+                m_DungeonEnemy = GetComponent<Dungeon.DungeonEnemy>();
 
-            // ---- 4) 随机发光带 ----
+            if (m_DungeonEnemy != null &&
+                m_DungeonEnemy.DungeonPlayerFound == 0 &&
+                m_LastSonarBirthTime > float.NegativeInfinity)
+            {
+                m_DungeonEnemy.DungeonPlayerFound = 1;
+            }
+
+            if (DungeonPlayerKnown)
+            {
+                UpdatePlayerRef();
+
+                if (m_Player != null)
+                    DungeonLastPlayerPos = m_Player.transform.position;
+            }
+
+            // ---- 3) 移动与开火 ----
             //
-            //   ★ 条件 = **想动 / 刚停下（3 秒宽限期）/ 特殊动作中**，
-            //     和探秘模式完全一样。
+            //   ★ 有 DungeonEnemy（怪物潮刷出来的怪）：由它接管
+            //     —— 随机巡逻 / 寻路到能命中的位置 + 定时齐射。
+            //   ★ 没有 DungeonEnemy（手工摆在场景里的怪）：退回"直接追玩家"，
+            //     方便单独测试移动。
             //
-            //   也就是说：怪物在移动时会持续发光（暴露自己），
-            //   静止不动时不发光。
+            //   ★ 无论哪条路都**不击杀** —— 这个方法里根本没有
+            //     BodyTouchesPlayer() / Kill() 的调用。
+            if (m_DungeonEnemy == null) m_DungeonEnemy = GetComponent<Dungeon.DungeonEnemy>();
+
+            if (m_DungeonEnemy != null && m_DungeonEnemy.isActiveAndEnabled)
+            {
+                // 先决定"往哪走"（会调 DungeonSetMoveTarget / DungeonClearMoveTarget）
+                m_DungeonEnemy.PatrolTick(now);
+
+                // 再真正移动（朝 DungeonSetMoveTarget 写进去的 m_StopPoint 走）
+                MoveTowardTarget();
+
+                // 移动完再判断开火（视线用当前帧的位置算）
+                m_DungeonEnemy.CombatTick(now);
+            }
+            else
+            {
+                MoveTowardTarget();
+            }
+
+            // ---- 4) 怪物光带 ----
             //
-            //   ★ 之前这里被整个删掉了，理由是"地牢模式怪物不移动"——
-            //     但后来恢复了追击，怪物会移动了，于是变成
-            //     "一边追一边完全不出声"，看着像发光带坏了。
+            //   ★ 地牢模式新增规则（需求）：
+            //     DungeonPlayerFound == 1 时**持续**释放怪物光带，
+            //     不管怪物当前是在移动、停顿还是原地待着 ——
+            //     让玩家能靠声波“看见”这个已经开始巡逻 / 开火的怪物。
+            //
+            //   ★ 另外两条途径继续保留：
+            //     · 想动 / 刚停下（3 秒宽限期）
+            //     · 特殊动作中（暴怒 / 靠近）
+            //     探秘模式没有 DungeonEnemy，dungeonFound 恒为 false，
+            //     所以探秘模式的行为和以前完全一致。
             //
             //   ★ 地牢模式**没有受惊状态**，所以不跑 emitIntervalFrightened 那个分支。
-            if (emitInterval > 0f && (m_WantMove || MovingOrGrace || InAngerActivity)
-                && now >= m_NextEmitTime)
+            bool dungeonFound = m_DungeonEnemy != null && m_DungeonEnemy.DungeonPlayerFound == 1;
+
+            bool shouldEmit = dungeonFound || m_WantMove || MovingOrGrace || InAngerActivity;
+
+            // ★ 间隔走分发：地牢模式读 dungeonEmitInterval，
+            //   和探秘模式的 emitInterval 完全分开
+            float emitIv = BeamEmitInterval;
+
+            if (emitIv > 0f && shouldEmit && now >= m_NextEmitTime)
             {
-                m_NextEmitTime = now + emitInterval;
+                m_NextEmitTime = now + emitIv;
                 EmitBurst();
             }
 
@@ -1729,6 +2010,27 @@ namespace EchoPuzzle
                 {
                     captured = 1;
                     ChasePlayerDirectly();
+                    return;
+                }
+
+                // ★★ 地牢模式：移动目标完全由 DungeonEnemy 决定 ★★
+                //
+                //   这里只推进"捕捉水位线"（m_LastSonarBirthTime），
+                //   让 UpdateDungeonMode 能据此判定"已经感知到玩家"；
+                //   但**不写** m_Target / m_StopPoint。
+                //
+                //   否则每次玩家踏出新脚步，CaptureSonarSource 都会把
+                //   怪物正在走的射击位 / 靠近点改写成光带产生点，
+                //   怪物就会一边“执行选点”一边被脚步牵着跑，
+                //   表现为路径反复重算、走走停停。
+                //
+                //   DungeonMoveControlled 只有地牢模式的 DungeonEnemy 会置 true，
+                //   探秘模式永远是 false，下面的逻辑对探秘模式完全无影响。
+                if (DungeonMoveControlled)
+                {
+                    if (birthTime > m_LastSonarBirthTime)
+                        m_LastSonarBirthTime = birthTime;
+
                     return;
                 }
 
@@ -2546,7 +2848,12 @@ namespace EchoPuzzle
 
                 // ★ captured == 1：直接朝玩家当前位置走，不读 m_StopPoint。
                 //   这样无论别处怎么改 m_StopPoint，追逐方向都只由玩家决定。
-                Vector3 flatGo  = IsCaptured && m_Player != null
+                //
+                // ★★ 地牢模式例外：DungeonMoveControlled = true 时移动由
+                //    DungeonEnemy 接管（随机巡逻 / 寻路到能命中的位置），
+                //    这里必须改读 m_StopPoint（它会被 DungeonSetMoveTarget 写），
+                //    否则怪物会无视巡逻目标、一直直冲玩家。
+                Vector3 flatGo  = IsCaptured && m_Player != null && !DungeonMoveControlled
                                 ? new Vector3(m_Player.transform.position.x, 0f, m_Player.transform.position.z)
                                 : new Vector3(m_StopPoint.x, 0f, m_StopPoint.z);
 
@@ -2922,7 +3229,9 @@ namespace EchoPuzzle
         {
             if (trailRenderer == null) return;
 
-            for (int i = 0; i < raysPerBurst; i++)
+            // ★ 发射数量 / 粗细 / 颜色 / 初始透明度都走"按模式分发"的值：
+            //   探秘读探秘那组，地牢读 dungeon* 那组。
+            for (int i = 0; i < BeamRaysPerBurst; i++)
             {
                 // 随机方向，但不要太贴近正上/正下（那样的光带在地上几乎看不到）
                 Vector3 dir = Random.onUnitSphere;
@@ -2934,12 +3243,18 @@ namespace EchoPuzzle
                 // ★ 这条光带走 MonsterTrailRenderer（怪物专用渲染器），
                 //   **不**进 SonarTrailRenderer，所以怪物本来就不可能捕捉到它 ——
                 //   不需要任何标记。
-                int idx = trailRenderer.AddTrail(origin, dir, trailWidth, trailColor, trailInitialAlpha);
+                int idx = trailRenderer.AddTrail(origin, dir, BeamWidth, BeamColor, BeamInitialAlpha);
                 if (idx < 0) continue;
 
                 m_Beams.Add(new LiveBeam
                 {
-                    index   = idx,
+                    // idx 是渲染器返回的稳定 ID（不是下标）
+                    trailId = idx,
+
+                    // ★ 把发射起点存进 LiveBeam：
+                    //   推进 / 撞墙检测都以它为准，不再用会移动的 transform.position
+                    origin  = origin,
+
                     dir     = dir,
                     length  = 0f,
                     stopped = false,
@@ -2955,7 +3270,9 @@ namespace EchoPuzzle
         {
             if (trailRenderer == null) return;
 
-            float speed = Mathf.Max(0.1f, moveSpeed) * 4f;   // 光带推进比怪物快，才像"扫描"
+            // ★ 推进速度按模式分发：
+            //   探秘 = moveSpeed * 4（老算法）；地牢 = dungeonTrailSpeed（独立参数）。
+            float speed = BeamSpeed;
 
             for (int i = m_Beams.Count - 1; i >= 0; i--)
             {
@@ -2964,7 +3281,10 @@ namespace EchoPuzzle
                 if (b.stopped)
                 {
                     // 已停：交给渲染器按残留时间自行淘汰
-                    if (trailRenderer.TrailCount == 0 || b.index >= trailRenderer.TrailCount)
+                    //
+                    // ★ 用 IsTrailAlive（按 ID 查），不要拿 ID 和 TrailCount 比 ——
+                    //   ID 是单调递增的，和列表长度没有可比性。
+                    if (!trailRenderer.IsTrailAlive(b.trailId))
                         m_Beams.RemoveAt(i);
                     continue;
                 }
@@ -2972,8 +3292,12 @@ namespace EchoPuzzle
                 float prevLen = b.length;
                 float newLen  = prevLen + speed * Time.deltaTime;
 
-                // 撞墙检测：从上一帧末端往前探
-                Vector3 from = transform.position + b.dir * (headRadius + prevLen);
+                // 撞墙检测：从光带**自己**的起点往前探
+                //
+                // ★ 起点用 b.origin（发射瞬间记下的），不是 transform.position。
+                //   怪物在移动，如果拿当前位置当起点，探测点会随怪物漂移，
+                //   测出来的墙距就时大时小 —— 光带长度会忽长忽短，甚至穿墙。
+                Vector3 from = b.origin + b.dir * prevLen;
                 float   delta = newLen - prevLen;
 
                 float finalLen = newLen;
@@ -2985,7 +3309,7 @@ namespace EchoPuzzle
                         finalLen = prevLen + hit.distance;
                         b.stopped = true;
                         b.length  = finalLen;
-                        trailRenderer.StopHead(b.index, finalLen);
+                        trailRenderer.StopHead(b.trailId, finalLen);
                         m_Beams[i] = b;
                         continue;
                     }
@@ -2993,23 +3317,24 @@ namespace EchoPuzzle
 
                 // 超过最大长度也停
                 //
-                // ★ 受惊状态下用较短的 trailMaxLengthFrightened，
-                //   所以光带会明显变短 —— 视觉上一眼能看出"这只怪物不一样了"。
-                float maxLen = IsFrightened ? trailMaxLengthFrightened : trailMaxLength;
+                // ★ 最大长度按模式分发：
+                //     地牢 -> dungeonTrailMaxLength（地牢没有受惊状态）
+                //     探秘 -> trailMaxLength；受惊时改用 trailMaxLengthFrightened
+                float maxLen = IsFrightened ? trailMaxLengthFrightened : BeamMaxLength;
 
                 if (finalLen >= maxLen)
                 {
                     finalLen = maxLen;
                     b.stopped = true;
                     b.length  = finalLen;
-                    trailRenderer.StopHead(b.index, finalLen);
+                    trailRenderer.StopHead(b.trailId, finalLen);
                     m_Beams[i] = b;
                     continue;
                 }
 
                 b.length = finalLen;
                 m_Beams[i] = b;
-                trailRenderer.SetLength(b.index, finalLen);
+                trailRenderer.SetLength(b.trailId, finalLen);
             }
         }
 
@@ -3046,7 +3371,7 @@ namespace EchoPuzzle
                 sonar.Emit(m_Player.FootPosition, killSonar.ToEmitParams(facing));
             }
 
-            AudioSystem.Play(AudioSystem.Cue.Death);
+            AudioSystem.Play(AudioSystem.Cue.MonsterDead);
         }
 
         private void Kill()
@@ -3073,7 +3398,7 @@ namespace EchoPuzzle
             if (m_RemovedByBlade) return;
             m_RemovedByBlade = true;
 
-            AudioSystem.Play(AudioSystem.Cue.Death);
+            AudioSystem.Play(AudioSystem.Cue.MonsterDead);
 
             // ★ 消散声波：在怪物**正下方**的地面高度上炸一次。
             //
@@ -3101,6 +3426,23 @@ namespace EchoPuzzle
 
         [Tooltip("自定义消散声波参数（勾上 Use Custom Remove Sonar 才生效）。")]
         public SonarEmitSettings removeSonar = SonarEmitSettings.DefaultShout;
+
+        // ★★ 地牢模式专用的死亡光带 ★★
+        //
+        //   需求："我希望能在文件里调整地牢模式下怪物被击杀后释放的光带的各项参数，
+        //         同时不改动探秘模式。"
+        //
+        //   所以地牢模式走**独立的一套**，探秘模式的 useCustomRemoveSonar /
+        //   removeSonar / killSonar 完全不受影响。
+
+        [Header("地牢模式 · 死亡光带（独立）")]
+        [Tooltip("地牢模式下被打死时，是否在脚下炸一次光带")]
+        public bool dungeonEmitDeathSonar = true;
+
+        [Tooltip("地牢模式死亡光带的全部参数（射线数 / 射程 / 颜色 / 宽度 / 寿命……）。\n\n" +
+                 "★ 这些**只在地牢模式**生效；\n" +
+                 "  探秘模式用的是上面的 killSonar / removeSonar，两边互不影响。")]
+        public SonarEmitSettings dungeonDeathSonar = SonarEmitSettings.DefaultShout;
 
         /// <summary>在怪物正下方的地面高度炸一次声波。</summary>
         private void EmitRemoveSonar()
@@ -3134,7 +3476,15 @@ namespace EchoPuzzle
             else
                 pos.y -= floatHeight;      // 探不到地面时的退路：球心往下 floatHeight
 
-            SonarEmitSettings set = useCustomRemoveSonar ? removeSonar : killSonar;
+            // ★ 按模式选参数：
+            //     · 地牢模式 -> dungeonDeathSonar（独立一套，可单独调）
+            //     · 探秘模式 -> useCustomRemoveSonar ? removeSonar : killSonar（原样不动）
+            SonarEmitSettings set;
+
+            if (GameUI.IsDungeonMode)
+                set = dungeonDeathSonar;
+            else
+                set = useCustomRemoveSonar ? removeSonar : killSonar;
 
             EmitParams p = set.ToEmitParams(Vector3.forward);
 

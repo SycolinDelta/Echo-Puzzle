@@ -182,6 +182,7 @@ MonoBehaviour:
   walkSpeed: 3.4
   runSpeed: 6.2
   accel: 16
+  walkTurnLerp: 12
   sneakBoostMultiplier: 4
   sneakBoostFadeDuration: 2
   sneakStride: 1
@@ -203,7 +204,7 @@ MonoBehaviour:
     bounceFalloff: 0.65
     bounceLifeLoss: 0.35
     lifetimeCap: 4
-    tailLinger: 20
+    tailLinger: 5
     diffuseCount15: 0
     diffuseCount45: 0
     diffuseCount75: 0
@@ -223,7 +224,7 @@ MonoBehaviour:
     bounceFalloff: 0.65
     bounceLifeLoss: 0.35
     lifetimeCap: 4
-    tailLinger: 20
+    tailLinger: 5
     diffuseCount15: 0
     diffuseCount45: 0
     diffuseCount75: 0
@@ -243,7 +244,7 @@ MonoBehaviour:
     bounceFalloff: 0.5
     bounceLifeLoss: 0.15
     lifetimeCap: 0.5
-    tailLinger: 20
+    tailLinger: 2
     diffuseCount15: 0
     diffuseCount45: 0
     diffuseCount75: 0
@@ -264,13 +265,13 @@ MonoBehaviour:
     bounceFalloff: 0.65
     bounceLifeLoss: 0.35
     lifetimeCap: 10
-    tailLinger: 20
+    tailLinger: 11
     diffuseCount15: 0
     diffuseCount45: 0
     diffuseCount75: 0
     hemisphereCount: 140
     hemisphereDiffuse: 1
-  useDungeonEchoes: 0
+  useDungeonEchoes: 1
   dungeonWalkEcho:
     enabled: 1
     color: {r: 1, g: 1, b: 1, a: 1}
@@ -278,17 +279,17 @@ MonoBehaviour:
     rayCount90: 24
     rayCount30: 0
     rayCount60: 0
-    range: 30
-    speed: 8
+    range: 10
+    speed: 9
     trailSpacing: 0.3
     maxBounces: 3
     bounceFalloff: 0.65
     bounceLifeLoss: 0.35
-    lifetimeCap: 2
-    tailLinger: 20
-    diffuseCount15: 8
-    diffuseCount45: 8
-    diffuseCount75: 8
+    lifetimeCap: 0.7
+    tailLinger: 2
+    diffuseCount15: 0
+    diffuseCount45: 0
+    diffuseCount75: 0
     hemisphereCount: 0
     hemisphereDiffuse: 0
   dungeonRunEcho:
@@ -298,17 +299,17 @@ MonoBehaviour:
     rayCount90: 24
     rayCount30: 0
     rayCount60: 0
-    range: 50
-    speed: 8
+    range: 10
+    speed: 9
     trailSpacing: 0.3
     maxBounces: 3
     bounceFalloff: 0.65
     bounceLifeLoss: 0.35
-    lifetimeCap: 4
-    tailLinger: 20
-    diffuseCount15: 8
-    diffuseCount45: 8
-    diffuseCount75: 8
+    lifetimeCap: 0.7
+    tailLinger: 2
+    diffuseCount15: 0
+    diffuseCount45: 0
+    diffuseCount75: 0
     hemisphereCount: 0
     hemisphereDiffuse: 0
   dungeonSneakEcho:
@@ -316,8 +317,8 @@ MonoBehaviour:
     color: {r: 1, g: 1, b: 1, a: 1}
     initialAlpha: 0.22
     rayCount90: 18
-    rayCount30: 8
-    rayCount60: 8
+    rayCount30: 0
+    rayCount60: 0
     range: 2
     speed: 4
     trailSpacing: 0.25
@@ -325,10 +326,10 @@ MonoBehaviour:
     bounceFalloff: 0.5
     bounceLifeLoss: 0.15
     lifetimeCap: 0.5
-    tailLinger: 20
-    diffuseCount15: 4
-    diffuseCount45: 4
-    diffuseCount75: 4
+    tailLinger: 2
+    diffuseCount15: 0
+    diffuseCount45: 0
+    diffuseCount75: 0
     hemisphereCount: 0
     hemisphereDiffuse: 0
   dungeonShoutEcho:
@@ -338,17 +339,17 @@ MonoBehaviour:
     rayCount90: 150
     rayCount30: 0
     rayCount60: 0
-    range: 80
-    speed: 8
+    range: 20
+    speed: 9
     trailSpacing: 0.3
     maxBounces: 4
     bounceFalloff: 0.65
     bounceLifeLoss: 0.35
-    lifetimeCap: 10
-    tailLinger: 20
-    diffuseCount15: 40
-    diffuseCount45: 40
-    diffuseCount75: 40
+    lifetimeCap: 3
+    tailLinger: 4
+    diffuseCount15: 0
+    diffuseCount45: 0
+    diffuseCount75: 0
     hemisphereCount: 0
     hemisphereDiffuse: 0
   lookSensitivity: 2.6
@@ -359,6 +360,12 @@ MonoBehaviour:
   zoomMin: 3
   zoomMax: 15
   zoomStep: 1
+  dungeonOrthographicCamera: 1
+  dungeonCameraYaw: 270
+  dungeonOrthoSize: 9
+  dungeonZoomMin: 8
+  dungeonZoomMax: 10
+  dungeonCameraHeight: 60
   cameraHeight: 1.55
   cameraLag: 14
   maxZoomExtraHeight: 3
@@ -371,6 +378,26 @@ MonoBehaviour:
     m_Bits: 259
   stones: {fileID: 0}
   dagger: {fileID: 0}
+  dungeonDodgeKey: 308
+  dodgeAccelTime: 0.2
+  dodgeHoldTime: 0.1
+  dodgeMaxHoldTime: 1.6
+  dodgeHoldStep: 0.1
+  dodgeDecelTime: 0.2
+  dodgeSpeedMultiplier: 5
+  dodgeAlpha: 0.1
+  dodgeGlow: 0.2
+  minDodgeEnergy: 0.5
+  maxDodgeEnergy: 2
+  dodgeChargePerTick: 0.1
+  dodgeChargeIntervals:
+  - 0.2
+  - 0.3
+  - 0.4
+  - 0.5
+  - 0.6
+  - 0.7
+  dungeonShoutCooldown: 3.5
   cameraResetKey: 114
   resetPitch: 12
   resetDistance: 3
@@ -406,6 +433,10 @@ MonoBehaviour:
   maxHealth: 6
   startingHealth: -1
   invincibleDuration: 0.5
+  maxShield: 4
+  startingShield: -1
+  shieldRegenDelay: 4
+  shieldRegenPerSecond: 1
   emitDeathSonar: 1
   deathSonar:
     rayCount90: 120

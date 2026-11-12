@@ -24,6 +24,25 @@ namespace EchoPuzzle
         /// <summary>一条怪物光带。</summary>
         public struct Trail
         {
+            /// <summary>
+            /// 稳定 ID（单调递增，永不复用）。
+            ///
+            /// ★★ 对外一律用 ID 操作，不要用列表下标 ★★
+            ///
+            ///   原来外部存的是 m_Trails 的下标，而淘汰时这里会把
+            ///   "末尾元素搬到被删位置"（m_Trails[i] = m_Trails[last]）——
+            ///   一次淘汰就让所有下标错位：
+            ///     · 正在推进的光带 SetLength 到别人身上 -> 那条突然变长 / 变短
+            ///     · 自己的长度停在半路 -> 看起来"这条光带很短"
+            ///   这就是"怪物光带忽长忽短"的主因之一。
+            ///
+            ///   改成 ID 之后，淘汰只把槽标记成 dead，下标彻底不参与外部逻辑。
+            /// </summary>
+            public int id;
+
+            /// <summary>是否还活着。false = 已淘汰，槽位可复用。</summary>
+            public bool alive;
+
             public Vector3 origin;      // 波前起点（球心 + dir × headRadius）
             public Vector3 dir;         // 单位方向
             public float   length;      // 已经铺出去的长度（米）
@@ -71,6 +90,12 @@ namespace EchoPuzzle
 
         private readonly List<Trail> m_Trails = new List<Trail>(256);
 
+        /// <summary>已淘汰、可复用的槽位下标（避免列表无限增长）。</summary>
+        private readonly Stack<int> m_FreeSlots = new Stack<int>();
+
+        /// <summary>下一个光带 ID。单调递增，永不复用。</summary>
+        private int m_NextId = 1;
+
         private Mesh         m_Mesh;
         private Material     m_Mat;
         private bool         m_OwnsMat;
@@ -83,7 +108,38 @@ namespace EchoPuzzle
         private Color[]   m_Cols;
         private int[]     m_Indices;
 
+        /// <summary>列表槽位总数（含已淘汰但还没被复用的槽）。</summary>
         public int TrailCount => m_Trails.Count;
+
+        /// <summary>某个光带 ID 是否还活着（槽未被淘汰、也未被复用）。</summary>
+        public bool IsTrailAlive(int id) => FindIndexById(id) >= 0;
+
+        /// <summary>按 ID 找槽位下标；找不到返回 -1（已淘汰 / 已被复用）。</summary>
+        private int FindIndexById(int id)
+        {
+            if (id <= 0) return -1;
+
+            for (int i = 0; i < m_Trails.Count; i++)
+            {
+                Trail t = m_Trails[i];
+                if (t.alive && t.id == id) return i;
+            }
+
+            return -1;
+        }
+
+        /// <summary>
+        /// 借一个槽位：优先复用已淘汰的，没有就追加；到上限返回 -1。
+        /// </summary>
+        private int RentSlot()
+        {
+            if (m_FreeSlots.Count > 0) return m_FreeSlots.Pop();
+
+            if (m_Trails.Count >= MaxQuads) return -1;
+
+            m_Trails.Add(default(Trail));
+            return m_Trails.Count - 1;
+        }
 
         // ---------------------------------------------------------------- 生命周期
 
@@ -240,14 +296,18 @@ namespace EchoPuzzle
 
         // ---------------------------------------------------------------- 登记
 
-        /// <summary>登记一条正在推进的怪物光带。返回它的下标，之后用 <see cref="StopHead"/> 停住它。</summary>
+        /// <summary>登记一条正在推进的怪物光带。返回它的**稳定 ID**，之后用 <see cref="StopHead"/> 停住它。</summary>
         public int AddTrail(Vector3 origin, Vector3 dir, float width, Color color, float initAlpha)
         {
             if (!m_Ready) return -1;
-            if (m_Trails.Count >= MaxQuads) return -1;
 
-            m_Trails.Add(new Trail
+            int slot = RentSlot();
+            if (slot < 0) return -1;
+
+            Trail t = new Trail
             {
+                id        = m_NextId++,
+                alive     = true,
                 origin    = origin,
                 dir       = dir.normalized,
                 length    = 0f,
@@ -256,18 +316,21 @@ namespace EchoPuzzle
                 color     = color,
                 width     = width,
                 initAlpha = initAlpha,
-            });
+            };
 
-            return m_Trails.Count - 1;
+            m_Trails[slot] = t;
+            return t.id;
         }
 
-        /// <summary>把某条光带的波前长度推进到 value（米）。</summary>
-        public void SetLength(int index, float value)
+        /// <summary>把某条光带的波前长度推进到 value（米）。参数是 <see cref="AddTrail"/> 返回的 ID。</summary>
+        public void SetLength(int id, float value)
         {
-            if (index < 0 || index >= m_Trails.Count) return;
-            Trail t = m_Trails[index];
+            int i = FindIndexById(id);
+            if (i < 0) return;
+
+            Trail t = m_Trails[i];
             t.length = value;
-            m_Trails[index] = t;
+            m_Trails[i] = t;
         }
 
         // ---------------------------------------------------------------- 折线光带
@@ -275,16 +338,20 @@ namespace EchoPuzzle
         // 直线光带（origin + dir + length）没法画弧。石子走的是抛物线，
         // 所以要能给它一条**自己的折线路径**，渲染时沿路径铺四边形。
 
-        /// <summary>登记一条**折线**光带（用于石子那种抛物线轨迹）。返回下标。</summary>
+        /// <summary>登记一条**折线**光带（用于石子那种抛物线轨迹）。返回稳定 ID。</summary>
         public int AddPathTrail(Vector3 firstPoint, float width, Color color, float initAlpha)
         {
             if (!m_Ready) return -1;
-            if (m_Trails.Count >= MaxQuads) return -1;
+
+            int slot = RentSlot();
+            if (slot < 0) return -1;
 
             var path = new List<Vector3>(64) { firstPoint };
 
-            m_Trails.Add(new Trail
+            Trail t = new Trail
             {
+                id        = m_NextId++,
+                alive     = true,
                 origin    = firstPoint,
                 dir       = Vector3.forward,
                 length    = 0f,
@@ -294,20 +361,22 @@ namespace EchoPuzzle
                 width     = width,
                 initAlpha = initAlpha,
                 path      = path,
-            });
+            };
 
-            return m_Trails.Count - 1;
+            m_Trails[slot] = t;
+            return t.id;
         }
 
         /// <summary>
-        /// 把折线光带的**末端**推进到 point。
+        /// 把折线光带的**末端**推进到 point（参数是光带 ID）。
         /// 如果和上一个点太近就不加，避免顶点爆炸。
         /// </summary>
-        public void PushPathPoint(int index, Vector3 point, float minStep = 0.12f)
+        public void PushPathPoint(int id, Vector3 point, float minStep = 0.12f)
         {
-            if (index < 0 || index >= m_Trails.Count) return;
+            int i = FindIndexById(id);
+            if (i < 0) return;
 
-            Trail t = m_Trails[index];
+            Trail t = m_Trails[i];
             if (t.path == null) return;
             if (t.path.Count >= MaxPathPoints) return;
 
@@ -315,15 +384,16 @@ namespace EchoPuzzle
             if ((point - last).sqrMagnitude < minStep * minStep) return;
 
             t.path.Add(point);
-            m_Trails[index] = t;
+            m_Trails[i] = t;
         }
 
-        /// <summary>折线光带：把末尾点固定为 point 并停止生长。</summary>
-        public void StopPath(int index, Vector3 finalPoint)
+        /// <summary>折线光带：把末尾点固定为 point 并停止生长（参数是光带 ID）。</summary>
+        public void StopPath(int id, Vector3 finalPoint)
         {
-            if (index < 0 || index >= m_Trails.Count) return;
+            int i = FindIndexById(id);
+            if (i < 0) return;
 
-            Trail t = m_Trails[index];
+            Trail t = m_Trails[i];
             if (t.headAge >= 0f) return;
 
             if (t.path != null)
@@ -333,25 +403,30 @@ namespace EchoPuzzle
             }
 
             t.headAge = Time.timeSinceLevelLoad;
-            m_Trails[index] = t;
+            m_Trails[i] = t;
         }
 
-        /// <summary>波前撞墙 / 到达极限：钉住长度，开始残留淡出。</summary>
-        public void StopHead(int index, float finalLength)
+        /// <summary>波前撞墙 / 到达极限：钉住长度，开始残留淡出（参数是光带 ID）。</summary>
+        public void StopHead(int id, float finalLength)
         {
-            if (index < 0 || index >= m_Trails.Count) return;
-            Trail t = m_Trails[index];
+            int i = FindIndexById(id);
+            if (i < 0) return;
+
+            Trail t = m_Trails[i];
             if (t.headAge >= 0f) return;      // 已经停过了
 
             t.length  = finalLength;
             t.headAge = Time.timeSinceLevelLoad;
-            m_Trails[index] = t;
+            m_Trails[i] = t;
         }
 
         public void ClearTrails()
         {
             if (m_Mesh != null) m_Mesh.Clear(false);
+
             m_Trails.Clear();
+            m_FreeSlots.Clear();
+            m_NextId = 1;
         }
 
         // ---------------------------------------------------------------- 渲染
@@ -381,6 +456,9 @@ namespace EchoPuzzle
             {
                 Trail tr = m_Trails[i];
 
+                // ★ 已淘汰的槽：直接跳过（槽位等下一次 AddTrail 复用）
+                if (!tr.alive) continue;
+
                 float age = now - tr.spawnTime;
 
                 // 波前停止后过了多久（还在推进时为 0）
@@ -392,8 +470,22 @@ namespace EchoPuzzle
                 // 太暗就淘汰
                 if (bodyAlpha <= visibleThreshold)
                 {
-                    m_Trails[i] = m_Trails[m_Trails.Count - 1];
-                    m_Trails.RemoveAt(m_Trails.Count - 1);
+                    // ★★ 这里绝对**不能**再把末尾元素搬过来 ★★
+                    //
+                    //   原写法：
+                    //       m_Trails[i] = m_Trails[m_Trails.Count - 1];
+                    //       m_Trails.RemoveAt(m_Trails.Count - 1);
+                    //   每淘汰一条，后面所有光带的槽位下标都会前移，
+                    //   外部（PuzzleMonster / StoneThrowSystem）保存的下标就全部错位：
+                    //     · SetLength 打到别人身上 -> 那条突然变长 / 变短
+                    //     · 自己的光带没人推进 -> 停在半路（看起来"很短"）
+                    //
+                    //   现在改成：只把槽标记成 dead，槽位回收进自由栈，
+                    //   下一次 AddTrail 复用；渲染时跳过 dead 槽。
+                    tr.alive    = false;
+                    tr.path     = null;         // 释放路径列表
+                    m_Trails[i] = tr;
+                    m_FreeSlots.Push(i);
                     continue;
                 }
 

@@ -70,6 +70,9 @@ namespace EchoPuzzle.Dungeon
 
         private void OnGUI()
         {
+            // ★ 模态界面（装配 / 商店 / 三选一）开着时让路
+            if (DungeonModalUi.AnyOpen) return;
+
             // ★ 只有地牢模式才画
             if (!GameUI.IsDungeonMode) return;
 

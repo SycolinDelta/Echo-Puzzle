@@ -25,11 +25,15 @@ namespace EchoPuzzle.Dungeon
         /// </summary>
         /// <param name="material">光带材质的颜色来源（材质本身由武器持有）</param>
         /// <param name="trailLength">保留参数（光带长度由 pointFadeTime × 速度决定）</param>
+        /// <param name="aoeRadius">范围伤害半径（米）。0 = 无（第十周任务 4）</param>
+        /// <param name="bounces">撞墙后能反弹几次（第十周任务 6）</param>
+        /// <param name="pierce">能穿过几只怪（第十周任务 6）</param>
         public static void Spawn(Vector3 origin, Vector3 dir,
                                  float speed, float range, float width,
                                  float damage, float manaRestore,
                                  float hurtRadius, float hurtHeight,
-                                 Material material, float trailLength)
+                                 Material material, float trailLength,
+                                 float aoeRadius = 0f, int bounces = 0, int pierce = 0)
         {
             if (BulletTrailRenderer.Instance == null)
             {
@@ -46,7 +50,7 @@ namespace EchoPuzzle.Dungeon
                 c = material.GetColor("_Color");
 
             r.Fire(origin, dir, speed, range, width,
-                   damage, manaRestore, hurtRadius, hurtHeight, c);
+                   damage, manaRestore, hurtRadius, hurtHeight, c, aoeRadius, bounces, pierce);
         }
     }
 }

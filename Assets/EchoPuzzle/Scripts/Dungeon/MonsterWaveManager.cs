@@ -213,6 +213,16 @@ namespace EchoPuzzle.Dungeon
             if (go.GetComponent<MonsterHealthBar>() == null)
                 go.AddComponent<MonsterHealthBar>();
 
+            // ★★ 怪物技能系统 ★★
+            //   刷出时随机 3 个主动技能 + 链式概率被动。
+            //   ★ 必须在 DungeonResetHealth 之前投骰子 ——
+            //     「生命值 ×2」被动要改 dungeonMaxHealth，复位时才生效。
+            DungeonMonsterSkills skills = go.GetComponent<DungeonMonsterSkills>();
+            if (skills == null)
+                skills = go.AddComponent<DungeonMonsterSkills>();
+            skills.RollOnSpawn(go.GetComponent<DungeonEnemy>(), monster,
+                               DungeonBuffState.StageIndex);
+
             // 血量复位（并推一次事件给血条）
             monster.DungeonResetHealth();
 

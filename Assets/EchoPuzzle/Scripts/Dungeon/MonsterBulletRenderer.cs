@@ -39,8 +39,9 @@ namespace EchoPuzzle.Dungeon
         [Tooltip("每发子弹的球半径（米）")]
         [Min(0.01f)] public float radius = 0.25f;
 
-        [Tooltip("球的经线数")]
-        [Range(6, 32)] public int segments = 14;
+        [Tooltip("球的经线数。越大越圆\n\n" +
+                 "★ 需求：球看起来要圆 —— 原来是 14，多边形感很明显，提到 32")]
+        [Range(6, 64)] public int segments = 32;
 
         [Tooltip("球的纬线数")]
         [Range(4, 24)] public int rings = 10;
@@ -68,6 +69,16 @@ namespace EchoPuzzle.Dungeon
             public float alpha;
             public float scale = 1f;
 
+            /// <summary>
+            /// 这一发子弹自己的**球半径**（米）。0 = 用渲染器上的全局 radius。
+            ///
+            /// ★ 同时用于两件事：
+            ///   · 视觉：画球时的半径
+            ///   · 碰撞：SphereCast 的球半径
+            ///   这样"看起来多大就撞多大"。
+            /// </summary>
+            public float selfRadius;
+
             public Color color = new Color(1f, 0f, 0f, 1f);
 
             // 淡入淡出参数（由发射者传入）
@@ -85,6 +96,11 @@ namespace EchoPuzzle.Dungeon
 
             public bool  exploding;
             public float explodeTimer;
+
+            // ★★ 爆炸弹（怪物主动技能）：爆炸时对范围内玩家造成溅射伤害 ★★
+            public bool  explosive;
+            public float blastRadius = 2.5f;
+            public int   blastDamage = 2;
 
             /// <summary>生命期是否已经结束（回收用）。</summary>
             public bool dead;
@@ -195,9 +211,22 @@ namespace EchoPuzzle.Dungeon
         {
             float dist = b.speed * dt;
 
+            // ★★ 用 SphereCast 而不是 Raycast ★★
+            //
+            //   需求："把怪物爆炸弹改用 SphereCast，碰撞半径 1m"
+            //
+            //   ★ Raycast 是一根无限细的射线，贴着墙边飞过都不会命中；
+            //     而子弹在画面上是一个有体积的球，二者不一致。
+            //   ★ SphereCast 用球去扫，命中判定和视觉体积对得上。
+            //
+            //   ★ 半径取自 Body.selfRadius（0 时回落到渲染器的全局 radius）。
+            float castR = b.selfRadius > 0.001f
+                        ? b.selfRadius
+                        : Mathf.Max(0.01f, radius);
+
             if (dist > 0f &&
-                Physics.Raycast(b.pos, b.dir, out RaycastHit hit, dist,
-                                hitMask, QueryTriggerInteraction.Ignore))
+                Physics.SphereCast(b.pos, castR, b.dir, out RaycastHit hit, dist,
+                                   hitMask, QueryTriggerInteraction.Ignore))
             {
                 // ★★ 判断撞到的是谁 ★★
                 //
@@ -229,6 +258,32 @@ namespace EchoPuzzle.Dungeon
             b.lifetime += dt;
             if (b.lifetime >= b.maxLifetime) Explode(b, false);
         }
+
+        /// <summary>
+        /// 在玩家身上取一个随机位置（给溅血光带用）。
+        /// </summary>
+        private static Vector3 RandomPointOnPlayer()
+        {
+            if (m_PlayerHealthRef == null) return Vector3.zero;
+
+            Transform t = m_PlayerHealthRef.transform;
+
+            CharacterController cc = t.GetComponent<CharacterController>();
+            if (cc != null)
+            {
+                Vector3 c = t.position + cc.center;
+
+                return new Vector3(
+                    c.x + Random.Range(-0.5f, 0.5f) * cc.radius,
+                    c.y + Random.Range(-0.35f, 0.35f) * cc.height * 0.5f,
+                    c.z + Random.Range(-0.5f, 0.5f) * cc.radius);
+            }
+
+            return t.position + Vector3.up * Random.Range(0.4f, 1.4f);
+        }
+
+        /// <summary>最近一次找到的 PlayerHealth（给 RandomPointOnPlayer 用）。</summary>
+        private static PlayerHealth m_PlayerHealthRef;
 
         /// <summary>穿透用的前推距离（米）。比任何碰撞体略大一点就够。</summary>
         private const float PierceStep = 0.35f;
@@ -262,6 +317,10 @@ namespace EchoPuzzle.Dungeon
             //   两者任一存在就当作"怪物"，子弹穿过去。
             if (col.GetComponentInParent<PuzzleMonster>() != null) return true;
             if (col.GetComponentInParent<DungeonEnemy>() != null)  return true;
+
+            // ---- 情况 3：怪物技能墙 ----
+            //   造墙技能是怪物放的：己方子弹直接穿过，不然施法者会被自己的墙挡住
+            if (col.GetComponent<MonsterSkillWall>() != null) return true;
 
             return false;
         }
@@ -352,6 +411,77 @@ namespace EchoPuzzle.Dungeon
                 // ★★ 溅血光带：玩家被击中时在命中点炸一次（不会被怪物捕捉）★★
                 BloodSplashSonar.Emit(b.pos, b.dir);
             }
+            else if (b.explosive)
+            {
+                // ★★ 爆炸弹：撞墙/超时爆炸时对范围内玩家造成溅射伤害 ★★
+                //   （直击玩家的那发已经在上面算过更高伤，不重复算溅射）
+                if (m_PlayerHealth == null) m_PlayerHealth = FindObjectOfType<PlayerHealth>();
+                m_PlayerHealthRef = m_PlayerHealth;
+
+                if (m_PlayerHealth != null &&
+                    HorizontalDist(m_PlayerHealth.transform.position, b.pos) <= b.blastRadius)
+                {
+                    m_PlayerHealth.TakeDamage(b.blastDamage);
+
+                    // ★★ 被爆炸波及的玩家身上也冒一次溅血 ★★
+                    //
+                    //   需求："怪物的爆炸弹没有直接命中却让玩家处于爆炸范围时，
+                    //         也会在玩家身上随机位置触发一次溅血光带。"
+                    //
+                    //   ★ 以前这里是在**爆炸中心** b.pos 处冒血，
+                    //     可那时玩家并不在爆炸中心（只是被波及），
+                    //     血花出现在空地上一看就不对。
+                    //   ★ 现在改成玩家身上的随机点。
+                    BloodSplashSonar.Emit(RandomPointOnPlayer(), b.dir);
+                }
+            }
+        }
+
+        /// <summary>水平距离（只看 x/z）。</summary>
+        private static float HorizontalDist(Vector3 a, Vector3 b)
+        {
+            return new Vector2(a.x - b.x, a.z - b.z).magnitude;
+        }
+
+        // ---------------------------------------------------------------- 手刀清弹
+
+        /// <summary>
+        /// 清除一个水平扇形（或圆形）区域内的怪物子弹 —— 玩家手刀用。
+        ///
+        /// 被清除的子弹保留爆炸视觉（放大 + 淡出），但**不**对玩家造成伤害
+        /// （需求："清除区域内的子弹，但是仍然会产生爆炸、地面伤害等效果"）。
+        /// </summary>
+        /// <param name="center">扇形圆心（玩家位置）</param>
+        /// <param name="radius">半径（米，只看水平距离）</param>
+        /// <param name="halfAngleDeg">扇形半角（度）；>= 180 视为整圆</param>
+        /// <param name="forward">扇形朝向（水平方向）</param>
+        /// <returns>清掉多少发</returns>
+        public int ClearArea(Vector3 center, float radius, float halfAngleDeg, Vector3 forward)
+        {
+            int cleared = 0;
+
+            for (int i = 0; i < m_Bodies.Count; i++)
+            {
+                Body b = m_Bodies[i];
+                if (b.dead || b.exploding) continue;
+
+                Vector2 d = new Vector2(b.pos.x - center.x, b.pos.z - center.z);
+                if (d.magnitude > radius) continue;
+
+                if (halfAngleDeg < 179.9f)
+                {
+                    Vector2 f  = new Vector2(forward.x, forward.z).normalized;
+                    Vector2 dn = d.normalized;
+
+                    float ang = Mathf.Acos(Mathf.Clamp(Vector2.Dot(f, dn), -1f, 1f)) * Mathf.Rad2Deg;
+                    if (ang > halfAngleDeg) continue;
+                }
+
+                Explode(b, false);      // 视觉爆炸，不掉血
+                cleared++;
+            }
+
+            return cleared;
         }
 
         private void ExplodeTick(Body b, float dt)
@@ -370,8 +500,9 @@ namespace EchoPuzzle.Dungeon
 
         private void BuildSphereTemplate()
         {
-            int lon = Mathf.Clamp(segments, 6, 32);
-            int lat = Mathf.Clamp(rings, 4, 24);
+            // ★ 上限一并放宽（原来是 32/24），否则 Inspector 里调大也没用
+            int lon = Mathf.Clamp(segments, 6, 64);
+            int lat = Mathf.Clamp(rings, 4, 48);
 
             m_UnitSphere = new Vector3[(lat + 1) * (lon + 1)];
 
@@ -467,7 +598,11 @@ namespace EchoPuzzle.Dungeon
                 if (b.alpha <= 0.001f) continue;
 
                 int vBase = vCount;
-                float s = r * Mathf.Max(0.01f, b.scale);
+
+                // ★ 子弹自己的半径优先（selfRadius > 0），否则用全局 radius
+                float br = b.selfRadius > 0.001f ? b.selfRadius : r;
+
+                float s = br * Mathf.Max(0.01f, b.scale);
 
                 Color c = b.color;
                 c.a = b.alpha;

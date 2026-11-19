@@ -52,16 +52,29 @@ namespace EchoPuzzle.Dungeon
             root.AddComponent<DungeonWeapon>();
             root.AddComponent<DungeonManaHUD>();
 
+            // 金币（第十周任务 2）：击杀获得，用来刷新选卡 / 商店消费
+            root.AddComponent<DungeonCurrency>();
+            root.AddComponent<DungeonGoldHUD>();
+
             // 强化系统（buff）：状态 + 每层通关的三选一界面 + 左上角的已获得列表
             root.AddComponent<DungeonBuffState>();
             root.AddComponent<DungeonBuffSelectUI>();
             root.AddComponent<DungeonBuffHUD>();
+
+            // 插件装备界面（第十周任务 5）：按 R 打开，两个武器模板按 E 切换
+            root.AddComponent<DungeonLoadoutUI>();
 
             // 右下角的技能冷却（闪避 / 声波）
             root.AddComponent<DungeonCooldownHUD>();
 
             // 子弹命中时的"溅血光带"（不会被怪物捕捉）
             root.AddComponent<BloodSplashSonar>();
+
+            // ★★ 两个池化渲染器（第十周：避免反复 new / Destroy）★★
+            //   · BulletBlastRenderer   —— 爆炸圆形（一次性 + 光环常驻）
+            //   · HandBladeLineRenderer —— 手刀线段
+            root.AddComponent<BulletBlastRenderer>();
+            root.AddComponent<HandBladeLineRenderer>();
 
 
         }

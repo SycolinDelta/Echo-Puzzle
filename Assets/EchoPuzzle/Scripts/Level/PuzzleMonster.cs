@@ -1395,6 +1395,13 @@ namespace EchoPuzzle
         {
             DungeonIsDead = true;
 
+            // ★ 金币：击杀奖励（第十周任务 2）。
+            //
+            //   放在这里而不是子弹里 —— 这里是**所有**死亡路径的唯一出口，
+            //   不管是子弹打死的、手刀砍死的，还是以后的其它伤害，都算一次击杀。
+            if (Dungeon.DungeonCurrency.Instance != null)
+                Dungeon.DungeonCurrency.Instance.OnMonsterKilled();
+
 
             // ★★ 死亡表现和探秘模式一致 ★★
             //

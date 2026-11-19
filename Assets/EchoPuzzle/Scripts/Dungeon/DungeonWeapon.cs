@@ -1,3 +1,5 @@
+using System.Collections;
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace EchoPuzzle.Dungeon
@@ -86,6 +88,11 @@ namespace EchoPuzzle.Dungeon
         [Tooltip("单发蓝耗。★ 支持小数（保留三位）")]
         [Min(0f)] public float manaCost = 1f;
 
+        [Header("连发装置")]
+        [Tooltip("★ 「连发装置」后续每一轮之间的间隔（秒）。需求：0.1\n\n" +
+                 "★ 第一轮是单击当帧立刻打出的，从第二轮起每隔这么久打一轮。")]
+        [Min(0f)] public float volleyInterval = 0.1f;
+
         [Header("精准度")]
         [Tooltip("★ 子弹发射时的随机水平偏转角（度）。\n\n" +
                  "需求：随机偏转 5° ~ -5°\n" +
@@ -97,7 +104,8 @@ namespace EchoPuzzle.Dungeon
         [Tooltip("单发伤害。怪物血量见 PuzzleMonster.dungeonMaxHealth（默认 12）。\n★ 支持小数（保留三位）")]
         [Min(0.001f)] public float damage = 4f;
 
-        [Tooltip("打死一只怪回复的蓝。★ 支持小数（保留三位）")]
+        [Tooltip("打死一只怪回复的蓝。★ 支持小数（保留三位）\n" +
+                 "应与「杀一只所需的蓝」大致相当，明显更高就会越打越富")]
         [Min(0f)] public float killManaRestore = 12f;
 
         // ------------------------------------------------------------------ 子弹
@@ -113,7 +121,7 @@ namespace EchoPuzzle.Dungeon
         [Min(0.01f)] public float bulletWidth = 0.1f;
 
         [Tooltip("子弹光带颜色")]
-        public Color bulletColor = new Color(0.35f, 0.65f, 1f, 1f);
+        public Color bulletColor = new Color(0.25f, 0.55f, 1f, 1f);
 
         [Tooltip("拖尾长度（米）。只画波前身后这么长的一段。\n\n" +
                  "★ 太长（比如跟射程一样）时，每秒好几发会首尾相接，\n" +
@@ -130,6 +138,52 @@ namespace EchoPuzzle.Dungeon
 
         [Tooltip("竖直总高（米）")]
         [Min(0.1f)] public float monsterHurtHeight = 4f;
+
+        [Header("手刀（未瞄准时单击左键）")]
+        [Tooltip("是否启用手刀：没按住右键瞄准时，单击左键挥出手刀")]
+        public bool enableHandBlade = true;
+
+        [Tooltip("手刀伤害（对扇形内的每只怪物）")]
+        [Min(1)] public int handBladeDamage = 4;
+
+        [Tooltip("★ 手刀伤害**每进入新一层**的倍率。需求：1.2\n\n" +
+                 "★ 第 1 层 ×1.0，第 2 层 ×1.2，第 3 层 ×1.44 …")]
+        [Min(1f)] public float handBladeDamagePerStage = 1.2f;
+
+        [Tooltip("手刀半径（米，只看水平距离）")]
+        [Min(0.5f)] public float handBladeRadius = 2.8f;
+
+        [Tooltip("手刀扇形半角（度）。60 = 以玩家朝向为中心的 120° 扇形")]
+        [Range(10f, 180f)] public float handBladeHalfAngle = 60f;
+
+        [Tooltip("手刀冷却（秒）")]
+        [Min(0.05f)] public float handBladeCooldown = 0.3f;
+
+        [Tooltip("命中怪物后的冷却（秒）—— 需求：命中把 0.3s 缩到 0.1s")]
+        [Min(0.02f)] public float handBladeHitCooldown = 0.1f;
+
+        [Tooltip("手刀光效颜色")]
+        public Color handBladeColor = new Color(0.35f, 0.65f, 1f, 1f);
+
+        [Header("手刀特效（线段扫描）")]
+        [Tooltip("★ 线段扫过整个扇形所需时间（秒）。需求：0.05")]
+        [Min(0.02f)] public float bladeSweepSeconds = 0.05f;
+
+        [Tooltip("★ 手刀扇形里画多少根线段（越多越密集）。\n\n" +
+                 "★ 这些线段会沿扇形角度均匀铺开，然后一起淡出。\n" +
+                 "★ 数值越大越密，也越费性能（池子会相应变大）。")]
+        [Range(2f, 360f)] public float bladeSweepLineCount = 24f;
+
+        [Tooltip("★ 每根线段留在原地后多久淡完（秒）。需求：0.18")]
+        [Min(0.02f)] public float bladeLineLingerSeconds = 0.2f;
+
+        [Tooltip("线段的粗细（米）")]
+        [Min(0.002f)] public float bladeLineWidth = 0.1f;
+
+        [Tooltip("（旧）整个扇形闪光的总时长。现在由上面三个参数控制，保留只为兼容")]
+        [Min(0.05f)] public float handBladeFxTime = 0.18f;
+
+
 
         // ------------------------------------------------------------------ 瞄准表现
 
@@ -168,6 +222,27 @@ namespace EchoPuzzle.Dungeon
                  "★ 地牢模式的光标是锁定的（屏幕上没有系统指针），" +
                  "所以由这里画一个准星告诉玩家\"鼠标在哪\"。")]
         public bool showCrosshair = true;
+
+        [Header("短剑图标（未瞄准时）")]
+        [Tooltip("★ 未处于右键瞄准状态时，在鼠标位置画一把短剑。\n\n" +
+                 "需求：不瞄准时鼠标位置显示短剑图标，但仍然不显示指针。\n" +
+                 "关闭后未瞄准时完全不画东西（和以前一样）。")]
+        public bool showBladeIcon = true;
+
+        [Tooltip("短剑图标颜色")] 
+        public Color bladeIconColor = new Color(1f, 1f, 1f, 0.75f);
+
+        [Tooltip("短剑图标大小（像素 @1080p 高度）")]
+        [Min(4f)] public float bladeIconSize = 36f;
+
+        [Tooltip("★ 剑身倾斜角度（度）。正数 = 剑身往右下延伸（看起来像指针那样向左上斜）。\n\n" +
+                 "需求：约 30°。0 = 完全竖直。")]
+        [Range(-80f, 80f)] public float bladeIconTiltDegrees = 30f;
+
+        [Tooltip("★ 剑尖相对指针的微调偏移（像素，y 向下为正）。\n\n" +
+                 "★ 图标以**剑尖**为锚点，所以默认 (0,0) 就是剑尖正好压在指针上。\n" +
+                 "想让剑稍微偏一点再调这里。")]
+        public Vector2 bladeIconOffset = new Vector2(0f, 0f);
 
         [Tooltip("准星半径（屏幕像素，按 1080 高换算）")]
         [Min(2f)] public float crosshairRadius = 13f;
@@ -226,9 +301,128 @@ namespace EchoPuzzle.Dungeon
         /// 含 buff 后的单发蓝耗。
         ///
         /// ★★ 保留三位小数 ★★
+        ///
+        /// ★★ 计算顺序：(基础 + 加法加成) × 乘区 ★★
+        ///
+        ///   需求："『连发装置』增加的基础蓝耗应当能吃到其他蓝耗buff的乘算效果。"
+        ///
+        ///   ★ 以前是 manaCost × 乘区 + 加法 —— 加法那部分在乘区**之外**，
+        ///     所以「连发装置 +0.5」不会因为「省电模式 ×0.75」而变少，
+        ///     也不会因为「高爆弹头 ×1.75」而变多，等于游离在体系外。
+        ///
+        ///   ✔ 现在先把加法并进基础值，再整体乘乘区：
+        ///       连发 ×1（+0.5）+ 省电 ×0.75  ->  (1 + 0.5) × 0.75 = 1.125
+        ///       连发 ×1（+0.5）+ 高爆 ×1.75  ->  (1 + 0.5) × 1.75 = 2.625
         /// </summary>
         public float EffectiveManaCost
-            => Round3(Mathf.Max(0f, manaCost * Mul(s => s.ManaCostMul)));
+            => Round3(Mathf.Max(0f, (manaCost + ManaCostAdd) * Mul(s => s.ManaCostMul)));
+
+        /// <summary>
+        /// 当前「霰弹改造」等级对应的扇形总角度（度）。
+        ///
+        /// ★ 需求："等级越高，扇形角度也越大，一级为 16°，二级为 32°，三级为 48°。"
+        ///
+        ///   ★ 等级来源：DungeonBuffState.ExtraPellets / 每级加的数量。
+        ///     但更直接的做法是看「霰弹改造」这个 buff 的层数。
+        ///   ★ 没拿过这个 buff 时返回数组第一项（16°），
+        ///     反正那时只有 1 颗子弹，角度用不上。
+        /// </summary>
+        public float EffectiveShotgunArc
+        {
+            get
+            {
+                if (shotgunArcByLevel == null || shotgunArcByLevel.Length == 0)
+                    return 16f;
+
+                int lv = ShotgunLevel;                       // 0 = 没拿过
+
+                int idx = Mathf.Clamp(lv - 1, 0, shotgunArcByLevel.Length - 1);
+
+                return Mathf.Max(1f, shotgunArcByLevel[idx]);
+            }
+        }
+
+        /// <summary>「霰弹改造」当前叠了几级（0 = 没拿过）。</summary>
+        private static int ShotgunLevel
+        {
+            get
+            {
+                var b = DungeonBuffState.Instance;
+                if (b == null) return 0;
+
+                // 按 id 在 buff 池里找到 "shotgun" 这条定义，再问它叠了几级
+                var pool = DungeonBuffPool.All;
+                for (int i = 0; i < pool.Count; i++)
+                {
+                    DungeonBuffDef d = pool[i];
+                    if (d != null && d.id == "shotgun") return Mathf.Max(0, b.StacksOf(d));
+                }
+
+                return 0;
+            }
+        }
+
+        /// <summary>
+        /// 含层数缩放后的手刀伤害。
+        ///
+        /// ★ 需求："让手刀的伤害每进入新一层后乘 1.2。"
+        ///
+        ///   ★ 层数缩放直接复用 <see cref="DungeonBuffState.StageScale"/> 的思路：
+        ///     但那个是 1.25，手刀要 1.2，所以这里自己按层号算。
+        ///   ★ 第 1 层 = ×1.0，第 2 层 = ×1.2，第 3 层 = ×1.44 …
+        /// </summary>
+        public int EffectiveHandBladeDamage
+        {
+            get
+            {
+                int stage = DungeonBuffState.StageIndex;
+
+                float scale = 1f;
+                for (int i = 1; i < stage; i++) scale *= handBladeDamagePerStage;
+
+                return Mathf.Max(1, Mathf.RoundToInt(handBladeDamage * scale));
+            }
+        }
+
+        /// <summary>buff 的蓝耗**加法**加成（「连发装置」每层 +0.5）。</summary>
+        private static float ManaCostAdd
+        {
+            get
+            {
+                var b = DungeonBuffState.Instance;
+                return b != null ? b.ManaCostAdd : 0f;
+            }
+        }
+
+        /// <summary>这一次单击要打几轮（1 = 单轮；「连发装置」每层 +1）。</summary>
+        public int EffectiveVolleys
+        {
+            get
+            {
+                var b = DungeonBuffState.Instance;
+                return 1 + Mathf.Max(0, b != null ? b.ExtraVolleys : 0);
+            }
+        }
+
+        /// <summary>子弹撞墙后能反弹几次。</summary>
+        public int EffectiveBounces
+        {
+            get
+            {
+                var b = DungeonBuffState.Instance;
+                return Mathf.Max(0, b != null ? b.BounceCount : 0);
+            }
+        }
+
+        /// <summary>子弹能穿过几只怪。</summary>
+        public int EffectivePierce
+        {
+            get
+            {
+                var b = DungeonBuffState.Instance;
+                return Mathf.Max(0, b != null ? b.PierceCount : 0);
+            }
+        }
 
         /// <summary>
         /// 含 buff 后的单发伤害。
@@ -276,6 +470,8 @@ namespace EchoPuzzle.Dungeon
         private Material m_GuideMat;
 
         private float   m_NextFireTime;
+
+        private float   m_NextBladeTime;
 
         /// <summary>
         /// 按 Mouse X/Y 增量积分出来的虚拟指针位置（屏幕像素，y 向上）。
@@ -347,8 +543,18 @@ namespace EchoPuzzle.Dungeon
 
             if (!GameUI.IsDungeonMode) { LeaveAim(); return; }
 
+            // ★★ 虚拟指针必须**每帧都积分**，不能因为任何提前 return 而中断 ★★
+            //
+            //   需求："在选buff界面短剑仍然不能跟随鼠标移动。"
+            //
+            //   ★ 之前下面那段"三选一界面开着 -> return"排在 TickVirtualCursor 之前，
+            //     结果界面一开就不会再积分指针，短剑就死死钉在原地。
+            //   ★ 现在把指针积分提到最前面：不管是正常游玩、瞄准、
+            //     还是任何全屏界面打开，指针都跟着鼠标走。
+            TickVirtualCursor();
+
             // 强化三选一界面打开时世界是冻结的（timeScale = 0），武器也不该响应
-            if (DungeonBuffSelectUI.Instance != null && DungeonBuffSelectUI.Instance.IsOpen)
+            if (IsAnyDungeonUiOpen)
             {
                 LeaveAim();
                 return;
@@ -368,7 +574,21 @@ namespace EchoPuzzle.Dungeon
             if (wantAim && !IsAiming) EnterAim();
             else if (!wantAim && IsAiming) LeaveAim();
 
-            if (!IsAiming) return;
+            // ★★ 手刀（需求 2）：没有按住右键瞄准时，单击左键挥出手刀 ★★
+            //     对鼠标方向的扇形造成伤害并清除区域内的怪物子弹。
+            if (!IsAiming)
+            {
+                // ★ 指针已经在 Update 开头统一积分过了，这里直接用。
+
+                if (enableHandBlade && CanUseHandBlade() &&
+                    Input.GetKeyDown(fireKey) &&
+                    Time.timeSinceLevelLoad >= m_NextBladeTime)
+                {
+                    TryHandBlade();
+                }
+
+                return;
+            }
 
             HandleAimMouse();
             UpdateAimTransform();
@@ -391,12 +611,8 @@ namespace EchoPuzzle.Dungeon
         /// </summary>
         private void OnGUI()
         {
-            if (!showCrosshair) return;
             if (!GameUI.IsDungeonMode) return;
             if (GameUI.Current != GameState.Playing) return;
-
-            // ★ 只有**瞄准中**才显示准星 —— 退出瞄准就消失
-            if (!IsAiming) return;
 
             if (m_CrossTex == null) m_CrossTex = MakePixel();
 
@@ -408,6 +624,20 @@ namespace EchoPuzzle.Dungeon
             //   所以要翻转一次。
             float cx = CrosshairScreen.x;
             float cy = Screen.height - CrosshairScreen.y;
+
+            // ★★ 未瞄准：画一把短剑，而不是准星圆环 ★★
+            //
+            //   需求："我希望在不处于右键瞄准状态时，鼠标位置会显示一把短剑的图标，
+            //         不过仍然不显示指针。"
+            //   —— 鼠标指针依然不显形（Cursor 仍是 Locked + 隐藏），
+            //      只是用 IMGUI 在虚拟指针的位置画一个图形。
+            if (!IsAiming)
+            {
+                if (showBladeIcon) DrawBladeIcon(cx, cy, scale);
+                return;
+            }
+
+            if (!showCrosshair) return;
 
             float r     = Mathf.Max(2f, crosshairRadius) * scale;
             float tick  = Mathf.Max(0f, crosshairTickLength) * scale;
@@ -441,6 +671,118 @@ namespace EchoPuzzle.Dungeon
 
             GUI.color = prev;
         }
+
+        /// <summary>
+        /// 在指针位置画一把短剑图标（未瞄准时用）。
+        ///
+        /// ★ 全部用 1×1 纹理拼，不依赖任何图片资源。
+        ///
+        /// ── 几何 ─────────────────────────────────────────────
+        ///   · **剑尖**正好落在指针那一点上（bladeIconOffset 可微调）
+        ///   · 整个图标绕剑尖旋转 bladeIconTiltDegrees 度
+        ///
+        ///        指针 ●  ← 剑尖（旋转中心）
+        ///            ╲
+        ///             ╲   剑身
+        ///              ╲
+        ///             ─┴─  护手
+        ///              │   剑柄
+        ///              ○   柄尾
+        ///
+        /// ── ⚠ 之前为什么倾斜后会"糊成一团" ─────────────────
+        ///   旧实现没有旋转，而是给每一段算了一个**轴对齐包围盒**：
+        ///
+        ///       extX = |dx|·halfAlong + |px|·halfAcross
+        ///       extY = |dy|·halfAlong + |py|·halfAcross
+        ///
+        ///   倾斜 0° 时这个盒子正好贴合形状，所以看着还行；
+        ///   一旦倾斜，盒子两个方向都变大 —— 剑身 60×10 像素的条
+        ///   会被画成 38×57 的方块，整把剑就变成一团。
+        ///
+        ///   ✔ 现在改用真正的**旋转矩阵**（GUI.matrix + Matrix4x4.TRS），
+        ///     每段就是一个规规矩矩的矩形，旋转后仍是细长的剑身。
+        /// </summary>
+        private void DrawBladeIcon(float cx, float cy, float scale)
+        {
+            if (m_CrossTex == null) return;
+
+            float s = Mathf.Max(4f, bladeIconSize) * scale;
+
+            // ---- 剑尖锚点（旋转中心）----
+            float tipX = cx + bladeIconOffset.x * scale;
+            float tipY = cy + bladeIconOffset.y * scale;
+
+            // 旋转角：IMGUI 的 y 向下，所以"顺时针"对应正角度
+            float tiltDeg = Mathf.Clamp(bladeIconTiltDegrees, -80f, 80f);
+
+            // ---- 各段尺寸（沿剑身方向 / 垂直剑身方向，单位：像素）----
+            float tipLen   = s * 0.18f;
+            float bladeLen = s * 0.50f;
+            float guardLen = s * 0.10f;
+            float gripLen  = s * 0.24f;
+
+            float bladeW = Mathf.Max(1f, s * 0.13f);
+            float gripW  = Mathf.Max(1f, s * 0.09f);
+            float guardW = s * 0.60f;
+
+            // 保存/恢复画布矩阵与颜色
+            Matrix4x4 savedMatrix = GUI.matrix;
+            Color     savedColor  = GUI.color;
+
+            // ★ 以剑尖为原点建一个旋转坐标系：
+            //     先平移到剑尖，再旋转。
+            //   之后所有绘制都用"沿剑身向下为正 y"的局部坐标，
+            //   完全不用手算包围盒。
+            GUI.matrix = savedMatrix
+                       * Matrix4x4.TRS(new Vector3(tipX, tipY, 0f),
+                                       Quaternion.Euler(0f, 0f, -tiltDeg),
+                                       Vector3.one);
+
+            GUI.color = bladeIconColor;
+
+            // 局部坐标里：y 轴沿剑身向下，x 轴垂直剑身
+            float t = 0f;
+
+            // 画一个中心在 (0, y中心)、宽 across、高 along 的矩形
+            void Rect2(float across, float along, float centerAlong)
+            {
+                float w = Mathf.Max(1f, across);
+                float h = Mathf.Max(1f, along);
+                GUI.DrawTexture(new Rect(-w * 0.5f, centerAlong - h * 0.5f, w, h), m_CrossTex);
+            }
+
+            // ---- 剑尖：3 段逐渐变宽，形成三角 ----
+            for (int i = 0; i < 3; i++)
+            {
+                float seg   = tipLen / 3f;
+                float width = Mathf.Max(1f, bladeW * ((i + 1) / 3f));
+                Rect2(width, seg, t + seg * 0.5f);
+                t += seg;
+            }
+
+            // ---- 剑身 ----
+            Rect2(bladeW, bladeLen, t + bladeLen * 0.5f);
+            t += bladeLen;
+
+            // ---- 护手（垂直剑身的横条）----
+            Rect2(guardW, guardLen, t + guardLen * 0.5f);
+            t += guardLen;
+
+            // ---- 剑柄 ----
+            Rect2(gripW, gripLen, t + gripLen * 0.5f);
+            t += gripLen;
+
+            // ---- 柄尾球 ----
+            {
+                float r = Mathf.Max(1f, s * 0.05f);
+                GUI.DrawTexture(new Rect(-r, t - r, r * 2f, r * 2f), m_CrossTex);
+            }
+
+            GUI.color    = savedColor;
+            GUI.matrix   = savedMatrix;
+        }
+
+
 
         /// <summary>用一个 1×1 纹理拼出一个圆环。</summary>
         private void DrawCircle(float cx, float cy, float radius, float thickness)
@@ -483,8 +825,13 @@ namespace EchoPuzzle.Dungeon
         {
             IsAiming = true;
 
-            // 初始化指针位置为屏幕中心，避免第一帧指向奇怪的方向
-            m_VirtualCursor = new Vector2(Screen.width * 0.5f, Screen.height * 0.5f);
+            // ★★ 不再把指针重置到屏幕中心 ★★
+            //
+            //   需求："现在按下右键会让鼠标回到屏幕中心，把这个效果去掉。"
+            //
+            //   ★ 虚拟指针现在是**持续存在**的：未瞄准时（短剑图标）也在积分，
+            //     所以按下右键时指针本来就在玩家刚看的位置，直接沿用即可，
+            //     不需要任何重置 —— 重置反而会让准星"跳"到屏幕中间。
 
             SetAimVisuals(true);
         }
@@ -541,12 +888,35 @@ namespace EchoPuzzle.Dungeon
         ///   ★ 和旧实现的区别：旧的是"按下右键那一刻的相机方向 + 相对角度"，
         ///     新的纯粹由鼠标**在屏幕上的位置**决定，不需要基准角。
         /// </summary>
-        private void HandleAimMouse()
+        /// <summary>
+        /// 积分虚拟指针（屏幕像素坐标）。
+        ///
+        /// ★ 光标是锁定的，屏幕上没有系统指针，所以用 Mouse X/Y 增量自己积一个出来。
+        /// ★ 抽成独立方法，是因为**没瞄准时也要跟着鼠标走** ——
+        ///   未瞄准状态下要画一把短剑图标，并且手刀要朝鼠标方向出。
+        /// </summary>
+        private void TickVirtualCursor()
         {
+            // ★★ 光标此时是**解锁**的（全屏 UI / 瞄准等）★☆
+            //
+            //   这种情况下直接读真实鼠标位置，而不是积分增量 ——
+            //   1) 边界不会漂移
+            //   2) 和 IMGUI 的 GUI.Button 命中判定用的是同一个坐标，
+            //      所以短剑指哪儿就能点哪儿
+            //
+            //   ★ 光标仍然是 Cursor.visible = false（屏幕上看不到系统指针），
+            //     只是 lockState 是 None，于是 Input.mousePosition 有效。
+            if (Cursor.lockState != CursorLockMode.Locked)
+            {
+                m_VirtualCursor = Input.mousePosition;
+                CrosshairScreen = m_VirtualCursor;
+                return;
+            }
+
+            // ---- 锁定状态（正常游玩）：用增量积分 ----
             float mx = Input.GetAxisRaw("Mouse X");
             float my = Input.GetAxisRaw("Mouse Y");
 
-            // 积分出虚拟指针（屏幕像素坐标）
             m_VirtualCursor += new Vector2(mx, my) * Mathf.Max(1f, virtualCursorPixelsPerUnit);
 
             // 夹在屏幕内，避免指针跑到画面外
@@ -554,11 +924,104 @@ namespace EchoPuzzle.Dungeon
             m_VirtualCursor.y = Mathf.Clamp(m_VirtualCursor.y, 0f, Screen.height);
 
             CrosshairScreen = m_VirtualCursor;
+        }
+
+        /// <summary>
+        /// 虚拟指针 -> 地面世界点。失败返回 false。
+        /// </summary>
+        private bool VirtualCursorToGround(out Vector3 groundPoint)
+        {
+            groundPoint = Vector3.zero;
+
+            if (m_Player == null) return false;
+
+            return m_Player.ScreenToGround(m_VirtualCursor, out groundPoint);
+        }
+
+        /// <summary>
+        /// 虚拟指针方向（从玩家水平指向指针所在的地面点）。
+        ///
+        /// ★ 指针离玩家太近时返回 false —— 那种情况下角度没意义。
+        /// </summary>
+        public bool TryGetCursorDirection(out Vector3 dir)
+        {
+            dir = Vector3.forward;
+
+            if (!VirtualCursorToGround(out Vector3 groundPoint)) return false;
+
+            Vector3 p = m_Player.transform.position;
+            Vector3 d = groundPoint - p;
+            d.y = 0f;
+
+            if (d.sqrMagnitude < 0.04f) return false;
+
+            dir = d.normalized;
+            return true;
+        }
+
+
+        /// <summary>
+        /// 把虚拟指针挪回屏幕中心。
+        ///
+        /// ★ 给商店 / buff 三选一这类"全屏 UI"用：
+        ///   这些界面是 IMGUI 画的按钮，点按钮走的是**系统鼠标位置**。
+        ///   虽然我们让系统指针保持隐藏（Cursor 仍是 Locked），
+        ///   但 IMGUI 的点击判定仍然发生在屏幕中心，
+        ///   所以把短剑图标也挪到中心，"短剑就是指针"才不会错位。
+        /// </summary>
+        public void RecenterCursor()
+        {
+            m_VirtualCursor = new Vector2(Screen.width * 0.5f, Screen.height * 0.5f);
+            CrosshairScreen = m_VirtualCursor;
+        }
+
+        /// <summary>
+        /// 现在能不能出手刀。
+        ///
+        /// ★ 需求："在点击离开商店的按钮时会触发一次手刀，因为两者都要点击左键，
+        ///         我希望在商店界面不要触发手刀。"
+        ///
+        ///   除了商店，buff 三选一 / 暂停 / loadout 这些"用鼠标点按钮"的
+        ///   IMGUI 界面也一律不触发出刀 —— 否则点一次按钮就顺手挥一刀。
+        /// </summary>
+        /// <summary>
+        /// 地牢里是否有"全屏界面"开着（buff 三选一 / 商店 / loadout）。
+        ///
+        /// ★ 这些界面用 timeScale = 0 冻结世界，武器和手刀都不该响应。
+        /// </summary>
+        public bool IsAnyDungeonUiOpen
+        {
+            get
+            {
+                if (DungeonBuffSelectUI.Instance != null && DungeonBuffSelectUI.Instance.IsOpen) return true;
+                if (DungeonShopUI.Instance       != null && DungeonShopUI.Instance.IsOpen)       return true;
+                if (DungeonLoadoutUI.Instance    != null && DungeonLoadoutUI.Instance.IsOpen)    return true;
+                return false;
+            }
+        }
+
+        private bool CanUseHandBlade()
+        {
+            // 商店
+            if (DungeonShopUI.Instance != null && DungeonShopUI.Instance.IsOpen) return false;
+
+            // 开局 / 换层的 buff 三选一
+            if (DungeonBuffSelectUI.Instance != null && DungeonBuffSelectUI.Instance.IsOpen) return false;
+
+            // 装填（loadout）界面
+            if (DungeonLoadoutUI.Instance != null && DungeonLoadoutUI.Instance.IsOpen) return false;
+
+            return true;
+        }
+
+        private void HandleAimMouse()
+        {
+            TickVirtualCursor();
 
             if (m_Player == null) return;
 
             // 指针 -> 地面世界点
-            if (!m_Player.ScreenToGround(m_VirtualCursor, out Vector3 groundPoint))
+            if (!VirtualCursorToGround(out Vector3 groundPoint))
                 return;
 
             Vector3 p   = m_Player.transform.position;
@@ -612,6 +1075,98 @@ namespace EchoPuzzle.Dungeon
         /// </summary>
         public float EffectiveSpreadDegrees
             => Round3(Mathf.Max(0f, bulletSpreadDegrees * Mul(s => s.BulletSpreadMul)));
+
+        // ------------------------------------------------------------------ 霰弹 / 范围伤害（第十周任务 4）
+
+        [Header("霰弹（任务 4）")]
+        [Tooltip("★ 霰弹扇形总角度（度），**按「霰弹改造」等级逐级变大**。\n\n" +
+                 "需求：1 级 16°，2 级 32°，3 级 48°\n" +
+                 "★ 数组第 n 项 = 拥有 n+1 级时的角度，最后一项会一直用下去。")]
+        public float[] shotgunArcByLevel = { 16f, 32f, 48f };
+
+        [Tooltip("每颗弹丸额外的随机抖动（度）")]
+        [Min(0f)] public float shotgunJitterDegrees = 1.5f;
+
+        [Header("范围伤害（任务 4）")]
+        [Tooltip("★ 爆炸半径（米），**按「爆炸弹头」等级逐级变大**。\n\n" +
+                 "需求：1 级 3.5，2 级 4.5，3 级 5.5\n" +
+                 "★ 数组第 n 项 = 拥有 n+1 级时的半径，最后一项会一直用下去。")]
+        public float[] aoeRadiusByLevel = { 3.5f, 4.5f, 5.5f };
+
+        [Tooltip("基础爆炸半径（米）。0 = 没有范围伤害。\n" +
+                 "★ 正常用 aoeRadiusByLevel 就够了，这个只是兜底。")]
+        [Min(0f)] public float baseAoeRadius;
+
+        /// <summary>这一次开火会打出几颗弹丸（1 = 单发）。</summary>
+        public int EffectivePellets
+        {
+            get
+            {
+                var b = DungeonBuffState.Instance;
+                return 1 + Mathf.Max(0, b != null ? b.ExtraPellets : 0);
+            }
+        }
+
+        /// <summary>子弹的范围伤害半径（米）。0 = 没有范围伤害。</summary>
+        /// <summary>
+        /// 当前「爆炸弹头」等级对应的爆炸半径（米）。
+        ///
+        /// ★ 需求："每级增加的伤害范围不同，一级为 2.5，二级增至 3.5，三级增至 4.5。"
+        ///
+        ///   ★ 以前是"基础值 + 每级固定 +1.5"（加法），
+        ///     现在改成直接查等级表 aoeRadiusByLevel。
+        ///   ★ 没有这个 buff 时返回 0 = 没有范围伤害。
+        /// </summary>
+        public float EffectiveAoeRadius
+        {
+            get
+            {
+                int lv = AoeLevel;                       // 0 = 没拿过
+
+                if (lv <= 0) return Round3(Mathf.Max(0f, baseAoeRadius));
+
+                if (aoeRadiusByLevel == null || aoeRadiusByLevel.Length == 0)
+                    return Round3(Mathf.Max(0f, baseAoeRadius));
+
+                int idx = Mathf.Clamp(lv - 1, 0, aoeRadiusByLevel.Length - 1);
+
+                return Round3(Mathf.Max(0f, aoeRadiusByLevel[idx]));
+            }
+        }
+
+        /// <summary>「爆炸弹头」当前叠了几级（0 = 没拿过）。</summary>
+        private static int AoeLevel
+        {
+            get
+            {
+                var b = DungeonBuffState.Instance;
+                if (b == null) return 0;
+
+                var pool = DungeonBuffPool.All;
+                for (int i = 0; i < pool.Count; i++)
+                {
+                    DungeonBuffDef d = pool[i];
+                    if (d != null && d.id == "aoe") return Mathf.Max(0, b.StacksOf(d));
+                }
+
+                return 0;
+            }
+        }
+
+        /// <summary>
+        /// 第 <paramref name="index"/> 颗弹丸的方向：在扇形里均匀铺开 + 轻微抖动。
+        /// </summary>
+        private Vector3 PelletDirection(Vector3 aimDir, int index, int count)
+        {
+            float arc   = EffectiveShotgunArc;
+            float step  = count > 1 ? arc / (count - 1) : 0f;
+            float angle = -arc * 0.5f + step * index;
+
+            if (shotgunJitterDegrees > 0f)
+                angle += Random.Range(-shotgunJitterDegrees, shotgunJitterDegrees);
+
+            return Quaternion.Euler(0f, angle, 0f) * aimDir;
+        }
 
         /// <summary>把圆环放到脚下、武器摆到环上朝瞄准方向。</summary>
         private void UpdateAimTransform()
@@ -695,22 +1250,34 @@ namespace EchoPuzzle.Dungeon
             // 2) 节流
             m_NextFireTime = Time.timeSinceLevelLoad + EffectiveFireInterval;
 
-            // 3) 出膛：方向由 AimYaw 决定（和相机没关系），再叠加随机散布
+            // 3) 出膛：方向由 AimYaw 决定（和相机没关系），再叠加散布
             //
-            // ★ 精准度：每次发射在 [-bulletSpreadDegrees, +bulletSpreadDegrees]
-            //   之间均匀随机偏一个水平角。
+            // ★ 单发：在 [-bulletSpreadDegrees, +bulletSpreadDegrees] 随机偏一个角。
             //   AimDirection() 本身**不改** —— 瞄准环和辅助线仍指向理想方向。
+            //
+            // ★ 多弹丸（霰弹，第十周任务 4）：在 shotgunArcDegrees 的扇形里均匀铺开，
+            //   每颗再加一点随机抖动，否则每次都是同样的图案。
             Vector3 aimDir = AimDirection();
-            Vector3 dir    = ApplyBulletSpread(aimDir);
 
-            Vector3 muzzle = MuzzlePosition(dir);
+            int   pellets = EffectivePellets;
+            float aoe     = EffectiveAoeRadius;
+            int   volleys = EffectiveVolleys;
+            int   bounce  = EffectiveBounces;
+            int   pierce  = EffectivePierce;
 
-            DungeonBullet.Spawn(muzzle, dir,
-                                EffectiveBulletSpeed, bulletRange,
-                                EffectiveBulletWidth,
-                                dmg, killBack,
-                                monsterHurtRadius, monsterHurtHeight,
-                                m_BulletMat, bulletTrailLength);
+            // 第一轮：本帧立刻打出去（保持单击的即时反馈）
+            FireOneVolley(aimDir, pellets, dmg, killBack, aoe, bounce, pierce);
+
+            // ★★ 「连发装置」后续几轮：每轮之间隔 volumeInterval 秒 ★★
+            //
+            //   需求："buff『连发装置』打出的两发子弹之间应当有时间间隔才对，
+            //         你检查一下有没有，如果没有就加个 0.1s 的间隔，有就改成 0.1s。"
+            //
+            //   ★ 检查结果：原来是一个 for 循环**同一帧**全部打完，没有任何间隔。
+            //   ★ 现在除了第一轮，其余轮次都交给协程，每隔 volleyInterval 秒打一轮。
+            if (volleys > 1)
+                StartCoroutine(VolleyRoutine(aimDir, pellets, volleys,
+                                             dmg, killBack, aoe, bounce, pierce));
 
             // ★★ 开火 = 暴露自己：场上所有怪物立即捕获玩家位置 ★★
             //
@@ -723,6 +1290,60 @@ namespace EchoPuzzle.Dungeon
 
             LastFireTime = Time.timeSinceLevelLoad;
             ShotsFired++;
+        }
+
+        /// <summary>
+        /// 打出**一轮**齐射（pellets 颗子弹，各自算散布）。
+        /// </summary>
+        private void FireOneVolley(Vector3 aimDir, int pellets,
+                                   float dmg, float killBack, float aoe,
+                                   int bounce, int pierce)
+        {
+            for (int i = 0; i < pellets; i++)
+            {
+                Vector3 dir = pellets <= 1
+                            ? ApplyBulletSpread(aimDir)
+                            : PelletDirection(aimDir, i, pellets);
+
+                Vector3 muzzle = MuzzlePosition(dir);
+
+                DungeonBullet.Spawn(muzzle, dir,
+                                    EffectiveBulletSpeed, bulletRange,
+                                    EffectiveBulletWidth,
+                                    dmg, killBack,
+                                    monsterHurtRadius, monsterHurtHeight,
+                                    m_BulletMat, bulletTrailLength,
+                                    aoe, bounce, pierce);
+            }
+        }
+
+        /// <summary>
+        /// 「连发装置」的后续轮次：每隔 <see cref="volleyInterval"/> 秒打一轮。
+        ///
+        /// ★ 第一轮已经在 Fire() 里立刻打掉了，所以这里从 v = 1 开始。
+        /// ★ 用 Time.deltaTime 而不是 unscaled —— 界面冻结（timeScale = 0）时
+        ///   连发应该跟着一起停。
+        /// </summary>
+        private IEnumerator VolleyRoutine(Vector3 aimDir, int pellets, int volleys,
+                                          float dmg, float killBack, float aoe,
+                                          int bounce, int pierce)
+        {
+            for (int v = 1; v < volleys; v++)
+            {
+                float wait = Mathf.Max(0f, volleyInterval);
+                float t    = 0f;
+
+                while (t < wait)
+                {
+                    t += Time.deltaTime;
+                    yield return null;
+                }
+
+                // 中途如果退出了瞄准 / 游戏结束，就不再补打
+                if (this == null) yield break;
+
+                FireOneVolley(aimDir, pellets, dmg, killBack, aoe, bounce, pierce);
+            }
         }
 
         /// <summary>
@@ -743,6 +1364,316 @@ namespace EchoPuzzle.Dungeon
 
                 e.DungeonPlayerFound = 1;
             }
+        }
+
+        /// <summary>
+        /// 手刀（需求 2）：未瞄准时单击左键，
+        /// 对玩家前方一小片扇形区域造成范围伤害并清除区域内的怪物子弹。
+        ///
+        ///   · 伤害：handBladeDamage（默认 4）× 扇形内每只怪；
+        ///   · 清子弹：区域内怪物子弹被清除，但保留爆炸视觉
+        ///     （需求："仍然会产生爆炸、地面伤害等效果"——
+        ///      爆炸视觉在 MonsterBulletRenderer.ClearArea 里触发，不掉血；
+        ///      伤害地面是独立物体，本来就不受影响）；
+        ///   · CD：handBladeCooldown（0.5s）；命中怪物缩到 handBladeHitCooldown（0.1s）。
+        /// </summary>
+        private void TryHandBlade()
+        {
+            float now = Time.timeSinceLevelLoad;
+
+            // 先按普通 CD 占位（命中怪物后再缩到 0.1s）
+            m_NextBladeTime = now + Mathf.Max(0.05f, handBladeCooldown);
+
+            // ---- 出刀方向：★ 朝鼠标方向 ★ ----
+            //
+            //   需求："手刀目前固定朝玩家朝向出刀，
+            //         我希望改成朝鼠标方向出刀。"
+            //
+            //   ★ 鼠标指针是虚拟的（光标被锁定，屏幕上没有系统指针），
+            //     方向取自 TickVirtualCursor 积出来的虚拟指针，
+            //     再经正交相机打到地面得到世界方向。
+            //   ★ 指针离玩家太近（< 0.2 米）时角度没意义，
+            //     这时退回"玩家当前朝向"，避免方向乱抖。
+            Vector3 origin = m_Player.transform.position;
+            Vector3 dir;
+
+            if (!TryGetCursorDirection(out dir))
+            {
+                dir = m_Player.transform.forward;
+                dir.y = 0f;
+
+                if (dir.sqrMagnitude < 1e-4f)
+                {
+                    Camera cam = Camera.main;
+                    dir = cam != null ? cam.transform.forward : Vector3.forward;
+                    dir.y = 0f;
+                }
+
+                if (dir.sqrMagnitude < 1e-4f) dir = Vector3.forward;
+                dir.Normalize();
+            }
+
+            // ---- 1) 伤害扇形内的怪物 ----
+            bool hitAny = false;
+
+            PuzzleMonster[] monsters = FindObjectsOfType<PuzzleMonster>(true);
+
+            for (int i = 0; i < monsters.Length; i++)
+            {
+                PuzzleMonster mon = monsters[i];
+                if (mon == null || mon.DungeonIsDead) continue;
+
+                Vector2 d = new Vector2(mon.transform.position.x - origin.x,
+                                        mon.transform.position.z - origin.z);
+
+                if (d.magnitude > handBladeRadius) continue;
+
+                Vector2 f = new Vector2(dir.x, dir.z).normalized;
+                float ang = Mathf.Acos(Mathf.Clamp(Vector2.Dot(f, d.normalized), -1f, 1f))
+                          * Mathf.Rad2Deg;
+
+                if (ang > handBladeHalfAngle) continue;
+
+                mon.DungeonTakeDamage(EffectiveHandBladeDamage);
+
+                // ★★ 手刀命中 -> 在怪物身上**随机位置**冒溅血 ★★
+                //
+                //   需求："手刀命中敌人时……会在怪物身上随机位置触发一次溅血光带。"
+                //
+                //   ★ 以前用的是 mon.transform.position（固定一个点），
+                //     每次血花都开在同一个位置，看得出是"贴图"。
+                BloodSplashSonar.Emit(BulletTrailRenderer.RandomPointOnMonster(mon), dir);
+
+                hitAny = true;
+            }
+
+            // ---- 2) 清除扇形内的怪物子弹（保留爆炸视觉，不掉血）----
+            if (MonsterBulletRenderer.Instance != null)
+            {
+                MonsterBulletRenderer.Instance.ClearArea(origin, handBladeRadius,
+                                                         handBladeHalfAngle, dir);
+            }
+
+            // ---- 3) 命中了怪物：CD 缩到 0.1s ----
+            if (hitAny)
+                m_NextBladeTime = now + Mathf.Max(0.02f, handBladeHitCooldown);
+
+            // ---- 4) 视觉：扇形闪光 ----
+            StartCoroutine(BladeFxRoutine(origin, dir));
+        }
+
+        /// <summary>
+        /// 手刀特效：一根**从玩家出发的线段**，在 0.1 秒内绕玩家扫过一个扇形。
+        ///
+        /// ── 需求（第 4 条）──────────────────────────────────
+        ///   "我希望它现在会出现一根线段，一端为玩家物体，点击发动手刀后，
+        ///    它会绕着玩家物体，在 0.1s 内扫过一个扇形，方向为顺时针和逆时针中随机一个，
+        ///    每扫过一小段距离都会留下一根滞留在原地的线段，在 0.18s 内渐渐淡出。
+        ///    手刀的伤害范围与这些线段无关，仅仅将视觉效果修改一下。
+        ///    线段扫过形成的扇形与原来的扇形的大小和颜色一样。"
+        ///
+        /// ── 实现 ────────────────────────────────────────────
+        ///   · 每条"留下的线段"是一个独立的细长四边形（从玩家指向扇区某角度）
+        ///   · 扫过的角度范围 = [-handBladeHalfAngle, +handBladeHalfAngle]（和伤害扇形一致）
+        ///   · 扫动时长 = sweepSeconds（默认 0.1s）
+        ///   · 每条线段在 lingerSeconds（默认 0.18s）内线性淡出
+        ///   · 方向每帧随机选一次：顺时针（从 -half 到 +half）或逆时针
+        /// </summary>
+        private IEnumerator BladeFxRoutine(Vector3 origin, Vector3 dir)
+        {
+            // 扇形中线朝向（水平）
+            float centerYaw = Mathf.Atan2(dir.x, dir.z) * Mathf.Rad2Deg;
+
+            float half = Mathf.Max(1f, handBladeHalfAngle);
+            float radius = Mathf.Max(0.1f, handBladeRadius);
+
+            // 随机扫动方向
+            bool cw = Random.value < 0.5f;
+
+            float from = cw ? -half :  half;
+            float to   = cw ?  half : -half;
+
+            float sweep = Mathf.Max(0.02f, bladeSweepSeconds);
+            float linger = Mathf.Max(0.02f, bladeLineLingerSeconds);
+
+            // 贴地高度
+            float groundY = 0.06f;
+            Vector3 probe = origin + Vector3.up * 6f;
+            if (Physics.Raycast(probe, Vector3.down, out RaycastHit hit, 12f,
+                                ~((1 << 2) | (1 << 4) | (1 << 5)),
+                                QueryTriggerInteraction.Ignore))
+            {
+                groundY = hit.point.y + 0.06f;
+            }
+
+            Vector3 basePos = new Vector3(origin.x, groundY, origin.z);
+
+            // 已经留下的线段
+            var lines = new List<BladeLine>();
+
+            // ★★ 一条线段绕玩家扫过扇形，**沿途逐根留下痕迹** ★★
+            //
+            //   需求："我希望手刀时用一条线段绕玩家扫出一个扇形，并且每扫过一定角度
+            //         就留下一个痕迹，但我现在发现这些痕迹似乎是同时留下的，
+            //         并不是随着线段扫过去留下的。"
+            //
+            //   ★ 上一轮为了修"线条不密"改成了"一帧内全部铺开"——
+            //     结果是所有痕迹同时出现，看起来像瞬间亮一个扇形，
+            //     没有"扫过去"的感觉。
+            //
+            //   ✔ 现在改成：
+            //     · 整段扫动耗时 bladeSweepSeconds（默认 0.05 秒）
+            //     · 在这段时间内**逐帧**推进角度
+            //     · 每当累计扫过 1/bladeSweepLineCount 的角度，就留一根痕迹
+            //     · 每帧还会画一根"正在移动的那条线"（临时的），
+            //       扫过之后它就地变成痕迹 —— 这样肉眼能看清线段在动
+
+            int totalLines = Mathf.Clamp(Mathf.RoundToInt(bladeSweepLineCount), 2, 360);
+
+            // 每扫过多少**度**留一根
+            float degPerLine = Mathf.Abs(to - from) / Mathf.Max(1, totalLines);
+
+            float swept      = 0f;      // 已经扫过的角度（绝对值）
+            float nextMarkAt = 0f;      // 下一次留痕的角度阈值
+
+            // 正在移动的那条线（每帧重新摆位置，不新增对象）
+            object tipToken = HandBladeLineRenderer.Rent(
+                basePos, centerYaw + from, radius, bladeLineWidth, handBladeColor, 0.85f);
+
+            float t0 = Time.timeSinceLevelLoad;
+
+            while (true)
+            {
+                float now = Time.timeSinceLevelLoad;
+                float k   = Mathf.Clamp01((now - t0) / sweep);
+
+                float ang = Mathf.Lerp(from, to, k);
+
+                // 摆到当前角度
+                if (tipToken != null)
+                {
+                    HandBladeLineRenderer.SetTransform(
+                        tipToken, basePos, centerYaw + ang, radius);
+                }
+
+                // 累计扫过的角度
+                swept = Mathf.Abs(ang - from);
+
+                // 到阈值就留一根痕迹
+                while (swept >= nextMarkAt && nextMarkAt <= Mathf.Abs(to - from) + 0.0001f)
+                {
+                    float markAng = Mathf.Lerp(from, to, nextMarkAt / Mathf.Max(0.0001f, Mathf.Abs(to - from)));
+
+                    lines.Add(CreateBladeLine(basePos, centerYaw + markAng, radius, linger));
+
+                    nextMarkAt += degPerLine;
+                }
+
+                UpdateBladeLines(lines);
+
+                if (k >= 1f) break;
+
+                yield return null;
+            }
+
+            // 收尾：最后一条痕迹正好落在扇形边界上
+            lines.Add(CreateBladeLine(basePos, centerYaw + to, radius, linger));
+
+            // 正在移动的那条线也就可以下班了
+            if (tipToken != null) HandBladeLineRenderer.Release(tipToken);
+
+            // 等所有痕迹淡完
+            while (lines.Count > 0)
+            {
+                UpdateBladeLines(lines);
+                yield return null;
+            }
+        }
+
+        /// <summary>一根"留在原地"的手刀线段（渲染器那边的 token）。</summary>
+        private sealed class BladeLine
+        {
+            public object token;
+            public float  dieAt;
+        }
+
+        /// <summary>
+        /// 借一根线段（由 <see cref="HandBladeLineRenderer"/> 池化，不新建网格/材质）。
+        ///
+        /// ★ 需求："手刀会创建一堆 handbladeline。我希望建两个渲染器将它们分别容纳，
+        ///         免得大量创建和删除东西。"
+        /// </summary>
+        private BladeLine CreateBladeLine(Vector3 center, float yawDeg, float radius, float life)
+        {
+            if (HandBladeLineRenderer.Instance == null) return null;
+
+            var line = new BladeLine();
+
+            line.token = HandBladeLineRenderer.Rent(
+                center, yawDeg, radius, bladeLineWidth, handBladeColor, 0.85f);
+
+            line.dieAt = Time.timeSinceLevelLoad + life;
+
+            return line;
+        }
+
+        /// <summary>刷新所有线段的透明度，并把过期的还回池里。</summary>
+        private void UpdateBladeLines(List<BladeLine> lines)
+        {
+            float now = Time.timeSinceLevelLoad;
+
+            for (int i = lines.Count - 1; i >= 0; i--)
+            {
+                BladeLine b = lines[i];
+                if (b == null) { lines.RemoveAt(i); continue; }
+
+                float remain = b.dieAt - now;
+                float t = Mathf.Clamp01(remain / Mathf.Max(0.02f, bladeLineLingerSeconds));
+
+                // 不透明度从 0.85 线性降到 0（和旧的扇形特效同亮度口径）
+                HandBladeLineRenderer.SetColor(b.token, handBladeColor, t * 0.85f);
+
+                if (remain <= 0f)
+                {
+                    HandBladeLineRenderer.Release(b.token);
+                    lines.RemoveAt(i);
+                }
+            }
+        }
+
+
+
+        /// <summary>以 +Z 为扇形中线、绕原点展开的水平扇形网格（扇心在原点）。</summary>
+        private static Mesh BuildSectorMesh(float radius, float halfAngleDeg)
+        {
+            int seg = 14;
+
+            float a0 = -halfAngleDeg * Mathf.Deg2Rad;
+            float a1 =  halfAngleDeg * Mathf.Deg2Rad;
+
+            var verts = new Vector3[seg + 2];
+            var tris  = new int[seg * 3];
+
+            verts[0] = Vector3.zero;
+
+            for (int i = 0; i <= seg; i++)
+            {
+                float a = Mathf.Lerp(a0, a1, (float)i / seg);
+                verts[i + 1] = new Vector3(Mathf.Sin(a) * radius, 0f, Mathf.Cos(a) * radius);
+            }
+
+            for (int i = 0; i < seg; i++)
+            {
+                tris[i * 3 + 0] = 0;
+                tris[i * 3 + 1] = i + 1;
+                tris[i * 3 + 2] = i + 2;
+            }
+
+            var mesh = new Mesh { name = "HandBladeSector" };
+            mesh.SetVertices(verts);
+            mesh.SetTriangles(tris, 0);
+            mesh.RecalculateBounds();
+            return mesh;
         }
 
         // ------------------------------------------------------------------ 建模

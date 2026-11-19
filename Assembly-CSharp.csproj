@@ -59,10 +59,14 @@
     <Analyzer Include="C:\Program Files\Unity\Hub\Editor\2022.3.62f3c1\Editor\Data\Tools\Unity.SourceGenerators\Unity.Properties.SourceGenerator.dll" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="Assets\EchoPuzzle\Scripts\Dungeon\MonsterSkillRingFx.cs" />
     <Compile Include="Assets\EchoPuzzle\Scripts\Bootstrap\LevelBuilder.cs" />
     <Compile Include="Assets\EchoPuzzle\Scripts\Core\NavMeshRuntimeBaker.cs" />
     <Compile Include="Assets\EchoPuzzle\Scripts\Level\WallOccluder.cs" />
     <Compile Include="Assets\EchoPuzzle\Scripts\Level\HemisphereDome.cs" />
+    <Compile Include="Assets\EchoPuzzle\Scripts\Dungeon\DungeonShopZone.cs" />
+    <Compile Include="Assets\EchoPuzzle\Scripts\Dungeon\DungeonModalUi.cs" />
+    <Compile Include="Assets\EchoPuzzle\Scripts\Dungeon\MonsterSkillWall.cs" />
     <Compile Include="Assets\EchoPuzzle\Scripts\Dungeon\MonsterZone.cs" />
     <Compile Include="Assets\EchoPuzzle\Scripts\Dungeon\DungeonBullet.cs" />
     <Compile Include="Assets\EchoPuzzle\Scripts\Dungeon\BulletTrailRenderer.cs" />
@@ -70,6 +74,7 @@
     <Compile Include="Assets\EchoPuzzle\Scripts\Level\SpecialZone.cs" />
     <Compile Include="Assets\EchoPuzzle\Scripts\Bootstrap\EchoBootstrap.cs" />
     <Compile Include="Assets\EchoPuzzle\Scripts\Dungeon\DungeonBuffSelectUI.cs" />
+    <Compile Include="Assets\EchoPuzzle\Scripts\Dungeon\DungeonGoldHUD.cs" />
     <Compile Include="Assets\EchoPuzzle\Scripts\Player\PlayerController.cs" />
     <Compile Include="Assets\EchoPuzzle\Scripts\Core\EchoRuntimeMaterials.cs" />
     <Compile Include="Assets\EchoPuzzle\Scripts\Level\PuzzleMonster.cs" />
@@ -92,6 +97,7 @@
     <Compile Include="Assets\EchoPuzzle\Scripts\Level\Gravel.cs" />
     <Compile Include="Assets\EchoPuzzle\Scripts\Dungeon\DungeonManaHUD.cs" />
     <Compile Include="Assets\EchoPuzzle\Scripts\Dungeon\MonsterBulletRenderer.cs" />
+    <Compile Include="Assets\EchoPuzzle\Scripts\Dungeon\DungeonLoadoutUI.cs" />
     <Compile Include="Assets\EchoPuzzle\Scripts\Core\EchoMaterials.cs" />
     <Compile Include="Assets\EchoPuzzle\Scripts\Core\SonarTrailRenderer.cs" />
     <Compile Include="Assets\EchoPuzzle\Scripts\Level\LevelGoal.cs" />
@@ -108,16 +114,22 @@
     <Compile Include="Assets\EchoPuzzle\Scripts\Dungeon\DungeonHUD.cs" />
     <Compile Include="Assets\EchoPuzzle\Scripts\Player\StoneThrowSystem.cs" />
     <Compile Include="Assets\EchoPuzzle\Scripts\Level\NearestMonsterAudio.cs" />
+    <Compile Include="Assets\EchoPuzzle\Scripts\Dungeon\DungeonCurrency.cs" />
     <Compile Include="Assets\EchoPuzzle\Scripts\Core\AudioSystem.cs" />
     <Compile Include="Assets\EchoPuzzle\Scripts\Bootstrap\EchoRuntimeBootstrap.cs" />
     <Compile Include="Assets\EchoPuzzle\Scripts\Core\WorldSnapshot.cs" />
     <Compile Include="Assets\EchoPuzzle\Scripts\Level\ZoneTrigger.cs" />
     <Compile Include="Assets\EchoPuzzle\Scripts\Dungeon\DungeonWeaponBootstrap.cs" />
+    <Compile Include="Assets\EchoPuzzle\Scripts\Dungeon\HandBladeLineRenderer.cs" />
     <Compile Include="Assets\EchoPuzzle\Scripts\Dungeon\DungeonWeapon.cs" />
+    <Compile Include="Assets\EchoPuzzle\Scripts\Dungeon\DungeonShopUI.cs" />
+    <Compile Include="Assets\EchoPuzzle\Scripts\Dungeon\MonsterDamageField.cs" />
     <Compile Include="Assets\EchoPuzzle\Scripts\Dungeon\DungeonMapGenerator.cs" />
+    <Compile Include="Assets\EchoPuzzle\Scripts\Dungeon\BulletBlastRenderer.cs" />
     <Compile Include="Assets\EchoPuzzle\Scripts\Dungeon\DungeonMana.cs" />
     <Compile Include="Assets\EchoPuzzle\Scripts\Core\DifficultySettings.cs" />
     <Compile Include="Assets\EchoPuzzle\Scripts\Level\MonsterCollisionGroup.cs" />
+    <Compile Include="Assets\EchoPuzzle\Scripts\Dungeon\DungeonMonsterSkills.cs" />
     <Compile Include="Assets\EchoPuzzle\Scripts\UI\BatterySystem.cs" />
     <Compile Include="Assets\EchoPuzzle\Scripts\Level\CircleWall.cs" />
   </ItemGroup>

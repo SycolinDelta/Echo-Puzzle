@@ -95,6 +95,8 @@ namespace EchoPuzzle.Dungeon
 
         private void OnGUI()
         {
+            if (DungeonModalUi.AnyOpen) return;      // 装配 / 商店 / 三选一打开时让路
+
             if (!GameUI.IsDungeonMode) return;
             if (GameUI.Current != GameState.Playing) return;
             if (m_Player == null) return;

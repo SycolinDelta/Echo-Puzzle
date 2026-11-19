@@ -4,6 +4,31 @@ using UnityEngine;
 namespace EchoPuzzle.Dungeon
 {
     /// <summary>
+    /// 【地牢模式】一条**插件实例** = 一个 buff 定义 + 它的等级（第十周任务 5）。
+    ///
+    /// ★ 关键设定：每种 buff 在背包里**只有一个实例**，重复获得只提升等级。
+    ///   所以不会出现"两份爆炸弹头"，只有"爆炸弹头 Lv3"。
+    ///   等级上限就是 <see cref="DungeonBuffDef.maxStacks"/>。
+    /// </summary>
+    public sealed class BuffInstance
+    {
+        public readonly DungeonBuffDef def;
+
+        /// <summary>等级（1 起）。</summary>
+        public int level;
+
+        public BuffInstance(DungeonBuffDef def, int level = 1)
+        {
+            this.def   = def;
+            this.level = Mathf.Max(1, level);
+        }
+
+        public string Name     => def != null ? def.name : "?";
+        public int    MaxLevel => def != null ? Mathf.Max(1, def.maxStacks) : 1;
+        public bool   IsMax    => level >= MaxLevel;
+    }
+
+    /// <summary>
     /// 【地牢模式】一条 buff 的定义（纯数据，不是 ScriptableObject）。
     ///
     /// ── 为什么不用 ScriptableObject ──────────────────────────
@@ -61,6 +86,38 @@ namespace EchoPuzzle.Dungeon
         /// <summary>蓝上限加成（加法，每次加这么多）。</summary>
         public int maxManaAdd;
 
+        // ---- 效果（加法 / 计数，第十周任务 4）----
+
+        /// <summary>
+        /// 额外弹丸数（0 = 单发）。霰弹枪 = +2；
+        /// 继续叠加会变成 5 发、7 发……
+        /// </summary>
+        [Min(0)] public int extraPellets;
+
+        // ★ aoeRadiusAdd 已删除：
+        //   爆炸半径现在由 DungeonWeapon.aoeRadiusByLevel（等级表）决定，
+        //   这个加法字段不再参与任何计算。
+
+        // ---- 第十周任务 6：连发 / 弹跳 / 穿透 ----
+
+        /// <summary>
+        /// 每次**单击**额外开火几次（0 = 只打一轮）。
+        /// 每叠一层 +1 轮，同时 <see cref="manaCostAdd"/> 累加。
+        /// </summary>
+        [Min(0)] public int extraVolleys;
+
+        /// <summary>子弹撞墙后还能反弹几次（0 = 撞墙就停）。</summary>
+        [Min(0)] public int bounceAdd;
+
+        /// <summary>子弹能穿过几只怪物继续飞（0 = 命中即停）。</summary>
+        [Min(0)] public int pierceAdd;
+
+        /// <summary>
+        /// 单发蓝耗的**加法**加成（不是乘区）。0.5 = 每发多花 0.5 蓝。
+        /// 「连发」这类强力 buff 用它作为代价。
+        /// </summary>
+        [Min(0f)] public float manaCostAdd;
+
         public bool HasEffect =>
             !Mathf.Approximately(damageMul, 1f) ||
             !Mathf.Approximately(fireRateMul, 1f) ||
@@ -69,7 +126,8 @@ namespace EchoPuzzle.Dungeon
             !Mathf.Approximately(bulletSpeedMul, 1f) ||
             !Mathf.Approximately(bulletWidthMul, 1f) ||
             !Mathf.Approximately(bulletSpreadMul, 1f) ||
-            maxManaAdd != 0;
+            maxManaAdd != 0 ||
+            extraPellets != 0;
     }
 
     /// <summary>
@@ -88,44 +146,96 @@ namespace EchoPuzzle.Dungeon
     {
         public static readonly List<DungeonBuffDef> All = new List<DungeonBuffDef>
         {
-            // ★★ 三条 buff 全部**乘算**（多层叠加时连乘）★★
-            //
-            //   需求原文：
-            //     · 蓝耗 *0.75
-            //     · 子弹伤害 *2，且蓝耗 *2
-            //     · 射速 *2，且蓝耗 *1.25
-            //
-            //   ★ 带小数的乘积一律保留三位小数（见 DungeonBuffState 里的 Round3）。
+            // ══════════════════════════════════════════════════════
+            //   第十周任务书里点名的效果，必须全部存在：
+            //     · 范围伤害（越叠越大）        -> "aoe"
+            //     · 霰弹（越多子弹）            -> "shotgun"
+            //     · 连发（单击多打一轮，+0.5 蓝耗）-> "volley"
+            //     · 反弹（撞墙弹更多次）        -> "bounce"
+            //     · 穿透（穿过更多敌人）        -> "pierce"
+            //   原来的「高爆弹头 / 快扳机 / 省电模式」三条已按要求删掉，
+            //   只保留一条「省电模式」当作缓解蓝耗压力的选项。
+            // ══════════════════════════════════════════════════════
 
             new DungeonBuffDef
             {
-                id = "dmg", name = "高爆弹头",
-                desc = "子弹伤害 ×2，但蓝耗 ×1.75，射速 ×0.75。\n" +
-                       "子弹散布 ×0.75（打得更准）。\n每层可叠，伤害和蓝耗一起翻倍。",
+                id = "aoe", name = "爆炸弹头",
+                desc = "子弹命中怪物或墙壁时产生爆炸：\n半径 2.5 米内的其它怪物受到 80% 伤害。\n" +
+                       "再获得一次，爆炸半径继续增加。",
                 weight = 10f, maxStacks = 3,
-                damageMul       = 2f,
-                manaCostMul     = 1.75f,
-                fireRateMul     = 0.75f,
-                bulletSpreadMul = 0.75f,
+                manaCostMul  = 1.15f,
             },
 
             new DungeonBuffDef
             {
-                id = "rate", name = "快扳机",
-                desc = "射速 ×2，但蓝耗 ×1.5。\n" +
-                       "子弹散布 ×1.25（打得更飘）。\n打得快，也更费蓝。",
+                id = "shotgun", name = "霰弹改造",
+                desc = "开火时额外发射 2 颗子弹，\n在 16° 扇形里铺开。\n" +
+                       "再获得一次，继续 +2 颗。",
                 weight = 10f, maxStacks = 3,
-                fireRateMul     = 2f,
-                manaCostMul     = 1.5f,
-                bulletSpreadMul = 1.25f,
+                extraPellets    = 2,
+                manaCostMul     = 1.2f,
+                bulletSpreadMul = 1.15f,
             },
 
+            new DungeonBuffDef
+            {
+                id = "volley", name = "连发装置",
+                desc = "每次单击额外开火 1 轮，\n但单发基础蓝耗 +0.5。\n" +
+                       "再获得一次，多打一轮、多 +0.5 蓝耗。",
+                weight = 10f, maxStacks = 3,
+                extraVolleys = 1,
+                manaCostAdd  = 0.5f,
+            },
+
+            new DungeonBuffDef
+            {
+                id = "bounce", name = "跳弹",
+                desc = "子弹撞墙后会反弹，\n每层多弹一次。\n" +
+                       "再获得一次，反弹次数 +1。",
+                weight = 10f, maxStacks = 3,
+                bounceAdd   = 1,
+                manaCostMul = 1.1f,
+            },
+
+            new DungeonBuffDef
+            {
+                id = "pierce", name = "穿甲弹",
+                desc = "子弹第一次命中敌人时会穿过它继续飞，\n每层多穿一只。\n" +
+                       "再获得一次，穿透数 +1。",
+                weight = 10f, maxStacks = 3,
+                pierceAdd   = 1,
+                manaCostMul = 1.1f,
+            },
+
+            // 唯一保留的"减负"选项：上面的 buff 都在加蓝耗，总得有一条能压回来
             new DungeonBuffDef
             {
                 id = "eco", name = "省电模式",
                 desc = "蓝耗 ×0.75。\n叠得越多，省得越多。",
                 weight = 10f, maxStacks = 3,
                 manaCostMul = 0.75f,
+            },
+
+            // ── 下面两条是后来加回来的（编号见需求 4）────────────────
+            new DungeonBuffDef
+            {
+                id = "dmg", name = "高爆弹头",
+                desc = "伤害 ×2，射速 ×0.75，蓝耗 ×1.75。\n" +
+                       "打得慢、也更费蓝，但一发顶两发。",
+                weight = 10f, maxStacks = 3,
+                damageMul   = 2f,
+                fireRateMul = 0.75f,
+                manaCostMul = 1.75f,
+            },
+
+            new DungeonBuffDef
+            {
+                id = "rate", name = "快扳机",
+                desc = "射速 ×2，蓝耗 ×1.25。\n" +
+                       "打得快，稍微费一点蓝。",
+                weight = 10f, maxStacks = 3,
+                fireRateMul = 2f,
+                manaCostMul = 1.25f,
             },
         };
 

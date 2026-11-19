@@ -150,10 +150,23 @@ namespace EchoPuzzle
 
         /// <summary>
         /// 玩家角色是否可操作（移动 / 发声 / 放标记）。
-        /// 只有真正的"进行中"才是 true —— 胜负界面淡出期间世界继续跑，但人不能动。
+        ///
+        /// ★ 只有真正的"进行中"才是 true —— 胜负界面淡出期间世界继续跑，但人不能动。
+        ///
+        /// ★★ 地牢的全屏界面开着时也是 false ★★
+        ///
+        ///   需求："在选buff界面按下空格时能听到玩家发出声波的音效……
+        ///         我希望在选buff界面无法操控玩家物体。"
+        ///
+        ///   buff 三选一 / 商店 / loadout 用的是 timeScale = 0 冻结世界，
+        ///   但 s_State 仍然是 Playing，所以光看状态位玩家还是"可操作"的 ——
+        ///   空格（发声波）、移动这些输入照样生效。
+        ///   这里额外排除全屏界面打开的情况。
         /// </summary>
         public static bool PlayerControllable =>
-            Instance != null && s_State == GameState.Playing;
+            Instance != null &&
+            s_State == GameState.Playing &&
+            !DungeonFullScreenUiOpen();
 
         /// <summary>是否正在播放胜负界面的淡出。</summary>
         public static bool EndFadeInProgress =>
@@ -881,10 +894,25 @@ namespace EchoPuzzle
             }
             else
             {
+                // ★★ 地牢模式下"解锁但不可见" ★★
+                //
+                //   需求："指针始终不出现，看起来像是短剑就是指针"。
+                //
+                //   · 地牢 + 有全屏界面（三选一 / 商店 / loadout）：
+                //        None + visible=false
+                //        —— 鼠标坐标有效（短剑能跟、能点卡片），但看不到系统指针。
+                //   · 其它情况（首页 / 暂停 / 胜负界面）：照旧 None + visible=true，
+                //        那些界面本来就要用系统指针点按钮。
+                bool dungeonUi = IsDungeonMode && aiming;
+
                 if (Cursor.lockState != CursorLockMode.None)
                 {
                     Cursor.lockState = CursorLockMode.None;
-                    Cursor.visible   = true;
+                    Cursor.visible   = !dungeonUi;
+                }
+                else if (Cursor.visible && dungeonUi)
+                {
+                    Cursor.visible = false;
                 }
             }
 
@@ -897,6 +925,19 @@ namespace EchoPuzzle
             bool wantVisible = s_State == GameState.Playing
                             || ((s_State == GameState.Won || s_State == GameState.Dead)
                                 && EndFade01 < 1f);
+
+            // ★★ 地牢：buff 界面开着 / 地图还在等 buff -> 强制隐藏世界 ★★
+            //
+            //   需求（用户给的时序）：
+            //     "跳出buff界面后，立即新建地图，然后将玩家物体传送至出生点，
+            //      但是此时不要显示地图和玩家物体，不要让玩家操控玩家物体。"
+            //     "玩家选好buff后，退出buff界面，并显示地图和玩家物体。"
+            //
+            //   ★ 这时 s_State 已经是 Playing（EnterPlaying 在开局就调了），
+            //     光看状态位世界会被判成"该显示" —— 必须在这里额外压下去，
+            //     否则建好的新地图会立刻露出来。
+            if (IsDungeonMode && DungeonSubStateBlocksWorld())
+                wantVisible = false;
 
             if (wantVisible)
             {
@@ -1309,17 +1350,71 @@ namespace EchoPuzzle
             var d = DaggerSystem.Instance;
             if (d != null && d.IsAiming && d.showCursorForDebug) return true;
 
-            // ★ 地牢强化三选一界面：要用真实指针点卡片。
-            //   这里必须让路 —— 否则 LateUpdate / EnforceWorldVisibility
-            //   每帧把光标锁回去，指针就会**疯狂闪烁**。
-            return DungeonBuffUIOpen();
+            // ★★ 地牢的三个全屏界面：让 GameUI **让路**（不再锁光标）★★
+            //
+            //   这三个界面用的是 IMGUI 的 GUI.Button，必须靠 Input.mousePosition
+            //   才能命中。而 Locked 状态下鼠标位置被钉死在屏幕中心 —— 点不到。
+            //
+            //   所以这里返回 true，让 LateUpdate / EnforceWorldVisibility
+            //   不要再去锁光标。界面自己会把光标设成
+            //       lockState = None, visible = false
+            //   —— 解锁（鼠标坐标有效、能点）但**不画系统指针**，
+            //      屏幕上的短剑图标就是唯一的指针。
+            //
+            //   ★ 关键是三处必须**口径一致**（都认 None + 隐藏），
+            //     否则 GameUI 每帧锁回、界面每帧解锁，就会疯狂闪烁。
+
+            return DungeonFullScreenUiOpen();
         }
 
-        /// <summary>地牢强化三选一界面是否开着（探秘模式下永远是 false）。</summary>
+        /// <summary>
+        /// 地牢里是否有"全屏 IMGUI 界面"开着（buff 三选一 / 商店 / loadout）。
+        ///
+        /// ★ 这些界面打开时光标必须是 None + 隐藏（见 AnySystemAiming 的注释）。
+        /// </summary>
+        /// <summary>
+        /// 地牢里"世界应该被遮住"的子状态：buff 界面开着，或地图正在等 buff。
+        ///
+        /// ★ 和 <see cref="DungeonFullScreenUiOpen"/> 的区别：
+        ///   那个只管"光标是否让路"，这个管"世界是否可见"。
+        ///   地图等 buff 期间界面可能还没弹出来（或刚好关掉一帧），
+        ///   但世界一律不该露出来。
+        /// </summary>
+        private static bool DungeonSubStateBlocksWorld()
+        {
+            if (DungeonFullScreenUiOpen()) return true;
+
+            var gen = Object.FindObjectOfType<EchoPuzzle.Dungeon.DungeonMapGenerator>();
+            if (gen != null && gen.IsWaitingBuff) return true;
+
+            return false;
+        }
+
+        private static bool DungeonFullScreenUiOpen()
+        {
+            var buff = EchoPuzzle.Dungeon.DungeonBuffSelectUI.Instance;
+            if (buff != null && buff.IsOpen) return true;
+
+            var shop = EchoPuzzle.Dungeon.DungeonShopUI.Instance;
+            if (shop != null && shop.IsOpen) return true;
+
+            var loadout = EchoPuzzle.Dungeon.DungeonLoadoutUI.Instance;
+            return loadout != null && loadout.IsOpen;
+        }
+
+        /// <summary>地牢里"要用鼠标点"的界面是否开着（三选一 / 商店）。探秘模式下永远是 false。</summary>
         private static bool DungeonBuffUIOpen()
         {
             var ui = EchoPuzzle.Dungeon.DungeonBuffSelectUI.Instance;
-            return ui != null && ui.IsOpen;
+            if (ui != null && ui.IsOpen) return true;
+
+            // 商店界面（第十周任务 3）同样要真实指针点"购买"
+            var shop = EchoPuzzle.Dungeon.DungeonShopUI.Instance;
+            if (shop != null && shop.IsOpen) return true;
+
+            // 插件装备界面（第十周任务 5）要拖/点插槽，也必须放开指针
+            var loadout = EchoPuzzle.Dungeon.DungeonLoadoutUI.Instance;
+            return loadout != null && loadout.IsOpen;
         }
 
         private static void LockCursor()
@@ -1380,7 +1475,23 @@ namespace EchoPuzzle
             else if (m_Player != null)
                 m_Player.Teleport(m_StartPosition, m_StartYaw, startPitch);
 
+            // ★ 地牢模式：开局送一次"任意自选强化"（第十周任务 1）
+            QueueDungeonStarterBuff();
+
             EnterPlaying();
+        }
+
+        /// <summary>
+        /// 【地牢模式】排队一次「开局自选强化」。
+        ///
+        /// 探秘模式下 DungeonBuffSelectUI.Instance 为 null，这里什么都不做。
+        /// 排的是"队"不是"立刻开"：界面那边会等 0.6 秒再弹，
+        /// 让玩家先看清自己站在哪儿。
+        /// </summary>
+        private static void QueueDungeonStarterBuff()
+        {
+            var picker = Dungeon.DungeonBuffSelectUI.Instance;
+            if (picker != null && !picker.StarterPending) picker.QueueStarterBuff();
         }
 
         private void RestartGame()
@@ -1406,6 +1517,9 @@ namespace EchoPuzzle
             //
             //   ResetHint() 是幂等的，重复调用没有副作用。
             ZoneSystem.ResetAllHints();
+
+            // ★ 地牢模式：重开一局同样送一次开局自选（ResetRunState 刚清空过 buff）
+            QueueDungeonStarterBuff();
 
             EnterPlaying();
         }
@@ -1546,6 +1660,10 @@ namespace EchoPuzzle
             var mana = EchoPuzzle.Dungeon.DungeonMana.Instance;
             if (mana != null) mana.ResetMana();
 
+            // ---- 金币：回到开局值（第十周任务 2）----
+            var gold = EchoPuzzle.Dungeon.DungeonCurrency.Instance;
+            if (gold != null) gold.ResetGold();
+
             // ---- 强化（buff）：清空 ----
             //
             //   ★ 按 R 重开一局 = 从第 1 层重新来过，强化自然也要清。
@@ -1556,6 +1674,10 @@ namespace EchoPuzzle
             // ---- 三选一界面：如果正开着，关掉并把 timeScale 还原 ----
             var picker = EchoPuzzle.Dungeon.DungeonBuffSelectUI.Instance;
             if (picker != null && picker.IsOpen) picker.ForceClose();
+
+            // ---- 插件装备界面：同理（否则重开后画面被它挡着、时间还停着）----
+            var loadout = EchoPuzzle.Dungeon.DungeonLoadoutUI.Instance;
+            if (loadout != null && loadout.IsOpen) loadout.Close();
 
             // ---- 怪物潮：清掉残留怪物 ----
             var waves = FindObjectOfType<EchoPuzzle.Dungeon.MonsterWaveManager>();

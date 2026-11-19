@@ -37,8 +37,24 @@ namespace EchoPuzzle.Dungeon
         [Tooltip("走进下一层后等多久再弹（等地图生成 + 淡入）。秒")]
         [Min(0f)] public float openDelay = 1.2f;
 
-        [Tooltip("一次给几个选项")]
+        [Tooltip("一次给几个选项（上限 3，填大于 3 会被夹到 3）")]
         [Min(1)] public int optionCount = 3;
+
+        /// <summary>一次最多只能给 3 张卡（需求：每次只在 3 个里选）。</summary>
+        private const int MaxOptionsPerPick = 3;
+
+        /// <summary>这一次实际抽几张。</summary>
+        private int PickCount => Mathf.Clamp(optionCount, 1, MaxOptionsPerPick);
+
+        [Header("刷新（花金币）")]
+        [Tooltip("刷新一次三选一花多少金币。0 = 免费（但开局自选永远不能刷新）")]
+        [Min(0)] public int rerollCost = 3;
+
+        [Tooltip("每次选卡最多能刷新几次。-1 = 不限")]
+        public int rerollLimit = -1;
+
+        [Tooltip("刷新的快捷键（点击底部按钮也可以）")]
+        public KeyCode rerollKey = KeyCode.F;
 
         // ------------------------------------------------------------------ 版式
 
@@ -96,6 +112,18 @@ namespace EchoPuzzle.Dungeon
         /// <summary>&gt;= 0 表示正在倒计时，到 0 就弹。</summary>
         private float m_PendingTimer = -1f;
 
+        /// <summary>开局自选的倒计时（和通关那条完全独立）。</summary>
+        private float m_StarterTimer = -1f;
+
+        /// <summary>开局自选还在排队。</summary>
+        private bool m_StarterPending;
+
+        /// <summary>当前这次界面是"开局自选"（关掉时不去通知地图）。</summary>
+        private bool m_IsStarterOpen;
+
+        /// <summary>本次界面已经刷新过几次。</summary>
+        private int m_RerollsUsed;
+
         private float     m_PrevTimeScale = 1f;
 
         private Texture2D m_Pixel;
@@ -107,6 +135,8 @@ namespace EchoPuzzle.Dungeon
         private GUIStyle m_DescStyle;
         private GUIStyle m_IndexStyle;
         private GUIStyle m_FooterStyle;
+        private GUIStyle m_ButtonStyle;
+        private GUIStyle m_GoldStyle;
         private GUIStyle m_ClickArea;
 
         // ------------------------------------------------------------------ 生命周期
@@ -165,12 +195,68 @@ namespace EchoPuzzle.Dungeon
             if (gen != null) gen.NotifyBuffSelected();
         }
 
+        // ------------------------------------------------------------------ 开局自选（第十周任务 1）
+
+        /// <summary>
+        /// 开局排队一次"自选强化"。
+        ///
+        /// 和通关时的那次三选一**不是一回事**：
+        ///   · 它不参与地图的"等 buff"时序（地图没在等），所以关掉时不去通知生成器
+        ///   · 它展示的是池子里**所有**还没叠满的 buff（"任意自选"），不是随机三张
+        /// </summary>
+        /// <param name="delay">
+        /// 延迟多少秒再弹。**开局 / 重新开始传 0**（立刻弹），
+        /// 因为那时地图还没建，没有任何东西需要等。
+        /// </param>
+        public void QueueStarterBuff(float delay = 0f)
+        {
+            m_StarterTimer   = Mathf.Max(0f, delay);
+            m_StarterPending = true;
+        }
+
+        /// <summary>开局那次是否还排着队（给 GameUI 判断用，避免重复排队）。</summary>
+        public bool StarterPending => m_StarterPending;
+
         private void Update()
         {
             if (!GameUI.IsDungeonMode)
             {
                 if (IsOpen) Close(false);
+
+                m_StarterPending = false;
                 return;
+            }
+
+            // ---- 开局自选 ----
+            //
+            //   需求（第二条）："点击新游戏或重新开始时不要有这个延迟，
+            //                   但玩家每次进入下一层时会有这个延迟。
+            //                   并且所有情况下都是先出现 buff 界面后再新建地图。"
+            //
+            //   ★ starterDelay 默认 0 -> 开局同一帧就弹，不等。
+            //     需要延迟的话把 QueueStarterBuff 的参数调大即可。
+            //   ★ 地图这时还没建（DungeonMapGenerator.StarterStageRoutine 在等），
+            //     所以天然满足"先 buff 后地图"。
+            if (m_StarterPending && !IsOpen && GameUI.Current == GameState.Playing)
+            {
+                if (m_StarterTimer > 0f)
+                {
+                    m_StarterTimer -= Time.unscaledDeltaTime;
+
+                    if (m_StarterTimer > 0f) { /* 还在等 */ }
+                    else
+                    {
+                        m_StarterPending = false;
+                        m_StarterTimer   = -1f;
+                        OpenStarter();
+                    }
+                }
+                else
+                {
+                    m_StarterPending = false;
+                    m_StarterTimer   = -1f;
+                    OpenStarter();
+                }
             }
 
             // ---- 倒计时：等地图淡出完成后弹 ----
@@ -202,21 +288,64 @@ namespace EchoPuzzle.Dungeon
 
             if (!IsOpen) return;
 
-            // ★ 兜底：别的系统（GameUI.LateUpdate / 切窗口）可能把光标又锁回去，
-            //   这里每帧重申一次 —— 指针不在，卡片就点不动。
-            if (Cursor.lockState != CursorLockMode.None || !Cursor.visible)
+            // ★ 兜底：切窗口 / 别的系统可能把光标解锁成可见。
+            //   ★ 选 buff 界面也不能出现系统指针 —— 屏幕上的短剑图标就是指针
+            //     （需求："指针始终不出现，看起来像是短剑就是指针"）。
+            // ★ 解锁（None）但保持**不可见** ★
+            //
+            //   ★ 必须解锁：Locked 时 Input.mousePosition 被钉在屏幕中心，
+            //     短剑动不了，GUI.Button 也点不到。
+            //   ★ visible = false：屏幕上看不到系统指针，
+            //     玩家眼里那个短剑图标就是指针。
+            if (Cursor.lockState != CursorLockMode.None || Cursor.visible)
             {
                 Cursor.lockState = CursorLockMode.None;
-                Cursor.visible   = true;
+                Cursor.visible   = false;
             }
 
             // ---- 数字键快速选择 ----
             if (Input.GetKeyDown(KeyCode.Alpha1)) Pick(0);
             if (Input.GetKeyDown(KeyCode.Alpha2)) Pick(1);
             if (Input.GetKeyDown(KeyCode.Alpha3)) Pick(2);
+
+            // ---- 花金币刷新三张卡（第十周任务 2）----
+            if (Input.GetKeyDown(rerollKey)) Reroll();
         }
 
         // ------------------------------------------------------------------ 开关
+
+        /// <summary>
+        /// 开局自选：和每层通关那次**完全一样** —— 随机抽 3 张互不相同的卡。
+        ///
+        /// ★ 之前这里是"把池子里所有 buff 都列出来"，池子涨到 5 条之后就变成五选一了。
+        ///   需求明确要求：每次只能从 **3 个**里选，而且每次随机。
+        /// </summary>
+        private void OpenStarter()
+        {
+            if (IsOpen) return;
+            if (GameUI.Current != GameState.Playing) return;
+
+            m_Options.Clear();
+            m_Options.AddRange(DungeonBuffPool.Roll(PickCount, DungeonBuffState.Instance));
+
+            if (m_Options.Count == 0) return;
+
+            IsOpen = true;
+            m_IsStarterOpen = true;
+            m_RerollsUsed   = 0;
+
+            m_PrevTimeScale = Time.timeScale;
+            Time.timeScale  = 0f;
+
+            // ★★ 解锁光标（鼠标坐标才有效），但**不画系统指针** ★★
+            //
+            //   ★ 必须 None：Locked 时 Input.mousePosition 被钉在屏幕中心，
+            //     短剑动不了、GUI.Button 也点不到。
+            //   ★ visible = false：屏幕上看不到系统指针，
+            //     玩家眼里那个短剑图标就是唯一的指针。
+            Cursor.lockState = CursorLockMode.None;
+            Cursor.visible   = false;
+        }
 
         private void Open()
         {
@@ -226,7 +355,7 @@ namespace EchoPuzzle.Dungeon
             if (GameUI.Current != GameState.Playing) return;
 
             m_Options.Clear();
-            m_Options.AddRange(DungeonBuffPool.Roll(Mathf.Max(1, optionCount), DungeonBuffState.Instance));
+            m_Options.AddRange(DungeonBuffPool.Roll(PickCount, DungeonBuffState.Instance));
 
             // 池子里的 buff 全叠满了 -> 这一层就没有强化可选
             if (m_Options.Count == 0)
@@ -235,12 +364,47 @@ namespace EchoPuzzle.Dungeon
             }
 
             IsOpen = true;
+            m_RerollsUsed = 0;
 
             m_PrevTimeScale = Time.timeScale;
             Time.timeScale  = 0f;
 
+            // ★★ 解锁光标（鼠标坐标才有效），但**不画系统指针** ★★
+            //
+            //   ★ 必须 None：Locked 时 Input.mousePosition 被钉在屏幕中心，
+            //     短剑动不了、GUI.Button 也点不到。
+            //   ★ visible = false：屏幕上看不到系统指针，
+            //     玩家眼里那个短剑图标就是唯一的指针。
             Cursor.lockState = CursorLockMode.None;
-            Cursor.visible   = true;
+            Cursor.visible   = false;
+        }
+
+        /// <summary>
+        /// 花金币刷新三张卡（第十周任务 2）。
+        ///
+        /// ★ 开局自选不能刷新：它列的是**全部**可选 buff，刷新没有意义。
+        /// </summary>
+        private void Reroll()
+        {
+            if (!IsOpen || m_IsStarterOpen) return;
+
+            if (rerollLimit >= 0 && m_RerollsUsed >= rerollLimit) return;
+
+            DungeonCurrency cur = DungeonCurrency.Instance;
+            if (cur == null) return;
+
+            int cost = Mathf.Max(0, rerollCost);
+
+            // 金币不够 -> 什么都不发生（不扣钱、也不换卡）
+            if (!cur.TrySpend(cost)) return;
+
+            m_RerollsUsed++;
+
+            m_Options.Clear();
+            m_Options.AddRange(DungeonBuffPool.Roll(PickCount, DungeonBuffState.Instance));
+
+            // 池子抽空了（全都叠满）就关掉，避免界面卡在一堆空卡片上
+            if (m_Options.Count == 0) Close();
         }
 
         /// <param name="restoreCursor">是否把光标锁回去（换场景 / 退出时不需要）</param>
@@ -251,6 +415,13 @@ namespace EchoPuzzle.Dungeon
             //   放在 Close 里而不是 Pick 里：
             //   Close 是所有关闭路径的唯一出口（选完 / ForceClose / 切场景），
             //   保证地图不会因为某个路径漏了通知而永远卡在黑屏。
+            //
+            //   ★ 开局自选**也要**通知 ——
+            //     开局现在是"界面出来 -> 立刻建图 -> 等选完 -> 显示世界"，
+            //     地图正卡在 while (m_WaitingBuff) 上等这个信号。
+            //     不通知的话，选完 buff 后地图永远不显示（卡黑屏）。
+            m_IsStarterOpen = false;
+
             NotifyMapBuffDone();
             if (!IsOpen) return;
 
@@ -276,6 +447,9 @@ namespace EchoPuzzle.Dungeon
         public void ForceClose()
         {
             m_PendingTimer = -1f;
+            m_StarterPending = false;
+            m_StarterTimer   = -1f;
+            m_IsStarterOpen  = false;
 
             if (!IsOpen)
             {
@@ -329,6 +503,13 @@ namespace EchoPuzzle.Dungeon
             // 标题
             GUI.Label(new Rect(0f, titleTop, w, 64f), "选择一项强化", m_TitleStyle);
 
+            // 金币：界面背景是不透明的，会把游戏内的 HUD 盖住，所以这里再画一次
+            if (DungeonCurrency.Instance != null)
+            {
+                GUI.Label(new Rect(w - 340f, titleTop + 6f, 292f, 44f),
+                          "金币 " + DungeonCurrency.Instance.Gold, m_GoldStyle);
+            }
+
             // ---- 三列等宽卡片 ----
             int   n       = m_Options.Count;
             float usable  = w - sideMargin * 2f - columnGap * (n - 1);
@@ -380,8 +561,8 @@ namespace EchoPuzzle.Dungeon
                            ? DungeonBuffState.Instance.StacksOf(d)
                            : 0;
 
-                string stackText = stacks > 0 ? $"已拥有 ×{stacks}（上限 ×{d.maxStacks}）"
-                                              : $"还未拥有（上限 ×{d.maxStacks}）";
+                string stackText = stacks > 0 ? $"已拥有 Lv{stacks}（上限 Lv{d.maxStacks}）"
+                                              : $"还未拥有（上限 Lv{d.maxStacks}）";
 
                 GUI.Label(new Rect(cardX + pad, cardY + cardH - 72f, cardW - pad * 2f, 40f),
                           stackText, m_FooterStyle);
@@ -393,8 +574,34 @@ namespace EchoPuzzle.Dungeon
                 }
             }
 
-            // 底部提示
-            GUI.Label(new Rect(0f, RefHeight - cardsBottom + 44f, w, 40f),
+            // ---- 底部：刷新按钮 + 提示 ----
+            //
+            // ★ 开局自选不显示刷新：它列的是"全部可选"，刷新没有意义。
+            if (!m_IsStarterOpen && DungeonCurrency.Instance != null)
+            {
+                float btnW = 320f;
+                float btnH = 46f;
+                var   btn  = new Rect((w - btnW) * 0.5f, RefHeight - 124f, btnW, btnH);
+
+                bool canReroll = DungeonCurrency.Instance.CanAfford(Mathf.Max(0, rerollCost))
+                              && (rerollLimit < 0 || m_RerollsUsed < rerollLimit);
+
+                bool clickedRefresh = GUI.Button(btn, GUIContent.none, m_ClickArea);
+                DrawBorder(btn);
+
+                Color pc2 = GUI.color;
+                if (!canReroll) GUI.color = new Color(1f, 1f, 1f, 0.35f);
+
+                GUI.Label(new Rect(btn.x, btn.y, btn.width, btn.height),
+                          $"{rerollKey}　刷新（{rerollCost} 金币）", m_ButtonStyle);
+
+                GUI.color = pc2;
+
+                if (clickedRefresh) Reroll();
+            }
+
+            // 提示
+            GUI.Label(new Rect(0f, RefHeight - 70f, w, 40f),
                       "点击卡片，或按 1 / 2 / 3", m_FooterStyle);
 
             GUI.matrix = saved;
@@ -467,6 +674,25 @@ namespace EchoPuzzle.Dungeon
                 wordWrap  = true,
             };
             m_FooterStyle.normal.textColor = dimColor;
+
+            // 刷新按钮上的字
+            m_ButtonStyle = new GUIStyle(GUI.skin.label)
+            {
+                font      = f,
+                fontSize  = Mathf.RoundToInt(footerSize),
+                alignment = TextAnchor.MiddleCenter,
+            };
+            m_ButtonStyle.normal.textColor = textColor;
+
+            // 右上角的金币
+            m_GoldStyle = new GUIStyle(GUI.skin.label)
+            {
+                font      = f,
+                fontSize  = Mathf.RoundToInt(footerSize),
+                alignment = TextAnchor.MiddleRight,
+                fontStyle = FontStyle.Bold,
+            };
+            m_GoldStyle.normal.textColor = new Color(1f, 0.85f, 0.35f, 1f);
 
             // 卡片点击区：只负责底色和悬停，不画字
             m_ClickArea = new GUIStyle(GUI.skin.button)

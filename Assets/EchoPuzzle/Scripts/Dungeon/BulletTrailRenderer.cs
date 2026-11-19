@@ -77,6 +77,21 @@ namespace EchoPuzzle.Dungeon
             public float hurtRadius = 2f;
             public float hurtHeight = 4f;
 
+            /// <summary>
+            /// 范围伤害半径（米）。0 = 没有范围伤害（第十周任务 4）。
+            /// 命中怪物时，以命中点为圆心、这个半径内的**其它**怪物也会吃伤害。
+            /// </summary>
+            public float aoeRadius;
+
+            /// <summary>撞墙后还能反弹几次（第十周任务 6）。</summary>
+            public int bouncesLeft;
+
+            /// <summary>还能穿过几只怪（第十周任务 6）。</summary>
+            public int pierceLeft;
+
+            /// <summary>已经命中过的怪（穿透时避免同一只被打两次）。跨段共享。</summary>
+            public HashSet<int> hitMonsters;
+
             public Color color = new Color(0.35f, 0.62f, 1f, 1f);
 
             public readonly List<Point> points = new List<Point>(128);
@@ -143,7 +158,8 @@ namespace EchoPuzzle.Dungeon
                          float speed, float range, float width,
                          float damage, float manaRestore,
                          float hurtRadius, float hurtHeight,
-                         Color color)
+                         Color color, float aoeRadius = 0f,
+                         int bounces = 0, int pierce = 0)
         {
             if (m_Shots.Count >= Mathf.Clamp(maxShots, 8, 512))
                 m_Shots.RemoveAt(0);        // 上限满了：顶掉最老的
@@ -159,6 +175,9 @@ namespace EchoPuzzle.Dungeon
                 manaRestore = Mathf.Max(0f, manaRestore),
                 hurtRadius  = Mathf.Max(0.01f, hurtRadius),
                 hurtHeight  = Mathf.Max(0.01f, hurtHeight),
+                aoeRadius   = Mathf.Max(0f, aoeRadius),
+                bouncesLeft = Mathf.Max(0, bounces),
+                pierceLeft  = Mathf.Max(0, pierce),
                 color       = color,
             };
 
@@ -234,6 +253,43 @@ namespace EchoPuzzle.Dungeon
             // ---- 3) 撞墙 ----
             if (wallHit)
             {
+                // ★★ 怪物技能墙：玩家子弹打在墙上会扣墙的血（墙有生命值）★★
+                if (wallInfo.collider != null)
+                {
+                    MonsterSkillWall skillWall = wallInfo.collider.GetComponent<MonsterSkillWall>();
+                    if (skillWall != null) skillWall.AbsorbPlayerBullet(s.damage);
+                }
+                Vector3 dirUnit   = (b - a) / Mathf.Max(1e-5f, segLen);
+                Vector3 wallPoint = a + dirUnit * wallDist;
+
+                // ★★ 爆炸弹头：打墙要炸，但**不要**溅血光带 ★★
+                //
+                //   需求："当选了爆炸弹头的buff时，子弹命中墙壁时会触发溅血光带，
+                //         我不希望这样。我希望有爆炸弹头的子弹命中墙壁和敌人时
+                //         会产生一个巨大的淡出的圆形，这个圆形和爆炸范围一样大。"
+                //
+                //   ★ 这块原来会调 BloodSplashSonar.Emit —— 那是"血"，撞墙不该有。
+                //     现在改为只铺一个爆炸圆形（半径 = aoeRadius），
+                //     伤害结算照旧走 ApplyAoeDamage。
+                if (s.aoeRadius > 0.01f)
+                {
+                    BulletBlastRenderer.Spawn(wallPoint, s.aoeRadius, s.color);
+                    ApplyAoeDamage(null, wallPoint, s);
+                }
+
+                // ★ 跳弹（第十周任务 6）：还有反弹次数就从撞点朝反射方向再飞一段
+                if (s.bouncesLeft > 0)
+                {
+                    s.bouncesLeft--;
+
+                    Vector3 reflected = Vector3.Reflect(dirUnit, wallInfo.normal);
+
+                    // 当前这一段到墙为止（保留它的光带），然后开一段新的
+                    StopAt(s, s.travel + wallDist);
+                    SpawnBounce(s, wallPoint + reflected * 0.02f, reflected);
+                    return;
+                }
+
                 StopAt(s, s.travel + wallDist);
                 return;
             }
@@ -255,6 +311,54 @@ namespace EchoPuzzle.Dungeon
             s.travel  = Mathf.Clamp(distance, 0f, s.range);
 
             AddPointsUpTo(s, s.travel);
+        }
+
+        /// <summary>
+        /// 跳弹：从撞点朝反射方向再开"一段新光带"。
+        ///
+        /// ★ 为什么不直接改原来那条的 dir：
+        ///   光带的采样点是按 origin + dir × 距离 算的（直线假设），
+        ///   中途拐弯会把前面已经画出来的点全部算错。
+        ///   拆成两段各自走直线，视觉上正好是一个折角，逻辑也最简单。
+        /// </summary>
+        private void SpawnBounce(Shot from, Vector3 origin, Vector3 dir)
+        {
+            var s = new Shot
+            {
+                origin      = origin,
+                dir         = dir.sqrMagnitude > 1e-6f ? dir.normalized : Vector3.forward,
+                speed       = from.speed,
+                range       = from.range,
+                width       = from.width,
+                damage      = from.damage,
+                manaRestore = from.manaRestore,
+                hurtRadius  = from.hurtRadius,
+                hurtHeight  = from.hurtHeight,
+                aoeRadius   = from.aoeRadius,
+                color       = from.color,
+
+                // 弹跳次数已经在外层扣过；穿透次数要继承。
+                bouncesLeft = from.bouncesLeft,
+                pierceLeft  = from.pierceLeft,
+
+                // ★★ 弹跳后清空"已命中集合" ★★
+                //
+                //   需求："我希望有buff跳弹和穿甲弹的子弹在打中怪物后，穿透过去，
+                //         从墙壁反弹回来时，如果再次打中怪物，则可以再造成一次伤害。"
+                //
+                //   ★ 以前这里是 hitMonsters = from.hitMonsters（继承），
+                //     意思是「整发子弹的生命周期里，同一只怪只吃一次伤害」，
+                //     所以反弹回来再打中就无效了。
+                //   ✔ 现在改成不继承 —— 新的一段光带从空集合开始，
+                //     反弹后再次命中同一只怪会再造成一次伤害。
+                //
+                //   ★ 段内仍然去重：一次穿透飞行途中穿过同一只怪只吃一次，
+                //     不会因为还留在怪物体积内而每帧重复扣血。
+                hitMonsters = null,
+            };
+
+            m_Shots.Add(s);
+            AddPointsUpTo(s, 0f);
         }
 
         // ---------------------------------------------------------------- 采样点
@@ -327,6 +431,13 @@ namespace EchoPuzzle.Dungeon
                 if (mon == null || !mon.isActiveAndEnabled) continue;
                 if (mon.DungeonIsDead) continue;
 
+                // ★ 穿透时，同一段飞行里同一只怪只吃一次伤害。
+                //
+                //   注意这个集合是每段独立的：
+                //   子弹撞墙反弹时会生成新的一段（hitMonsters = null），
+                //   所以反弹回来再打中同一只怪，会再造成一次伤害。
+                if (s.hitMonsters != null && s.hitMonsters.Contains(mon.GetInstanceID())) continue;
+
                 if (!SegmentHitsCylinder(a, b, mon.transform.position,
                                          s.hurtRadius, s.hurtHeight * 0.5f, out float t))
                     continue;
@@ -346,7 +457,18 @@ namespace EchoPuzzle.Dungeon
             //   命中点 = 线段 a->b 上 t = best 处
             Vector3 hitPoint = Vector3.Lerp(a, b, Mathf.Clamp01(best));
 
+            // ★ 需求："有爆炸弹头的子弹在直接命中敌人时**同样**要触发溅血光带。"
+            //   所以这里无条件放（不管有没有爆炸弹头）。
             BloodSplashSonar.Emit(hitPoint, s.dir);
+
+            // ★ 范围伤害（第十周任务 4）：命中点周围的其它怪物也吃伤害
+            //
+            //   ★ 有爆炸弹头时额外铺一个和爆炸范围一样大的圆形（纯视觉）。
+            if (s.aoeRadius > 0.01f)
+            {
+                BulletBlastRenderer.Spawn(hitPoint, s.aoeRadius, s.color);
+                ApplyAoeDamage(bestMon, hitPoint, s);
+            }
 
             // 这一发把它打死了 -> 回蓝
             if (!wasDead && bestMon.DungeonIsDead && s.manaRestore > 0)
@@ -354,12 +476,22 @@ namespace EchoPuzzle.Dungeon
                 if (DungeonMana.Instance != null) DungeonMana.Instance.Restore(s.manaRestore);
             }
 
+            // ★ 穿甲弹（第十周任务 6）：还有穿透次数就记下这只、继续飞
+            if (s.pierceLeft > 0)
+            {
+                s.pierceLeft--;
+
+                if (s.hitMonsters == null) s.hitMonsters = new HashSet<int>();
+                s.hitMonsters.Add(bestMon.GetInstanceID());
+
+                return false;      // false = 不停止，波前继续往前
+            }
+
             return true;
         }
 
         /// <summary>
         /// 清掉所有静态缓存。
-        ///
         /// ★ 时间戳用 float.NegativeInfinity 而不是 0 ——
         ///   新场景的 timeSinceLevelLoad 可能从 0 开始，
         ///   用 0 的话 "now < 0" 不成立，能刷新；
@@ -369,6 +501,70 @@ namespace EchoPuzzle.Dungeon
         {
             s_Monsters            = null;
             s_MonstersNextRefresh = float.NegativeInfinity;
+        }
+
+        /// <summary>
+        /// 范围伤害：以命中点为圆心，把半径内的**其它**怪物也打一遍（第十周任务 4）。
+        ///
+        /// ★ 主目标已经在外面按全额伤害处理过了，这里排除它，避免一枪打两次。
+        /// ★ 溅射伤害取主伤害的 60% —— 全额的话"爆炸弹头"会直接取代单体输出。
+        /// </summary>
+        private static void ApplyAoeDamage(PuzzleMonster primary, Vector3 center, Shot s)
+        {
+            RefreshMonsters();
+            if (s_Monsters == null) return;
+
+            float r2  = s.aoeRadius * s.aoeRadius;
+            float dmg = s.damage * 0.8f;
+
+            for (int i = 0; i < s_Monsters.Length; i++)
+            {
+                PuzzleMonster mon = s_Monsters[i];
+                if (mon == null || mon == primary) continue;
+                if (!mon.isActiveAndEnabled || mon.DungeonIsDead) continue;
+
+                Vector3 d = mon.transform.position - center;
+                d.y = 0f;                       // 只按水平距离算，和光带一样是平面判定
+
+                if (d.sqrMagnitude > r2) continue;
+
+                mon.DungeonTakeDamage(dmg);
+
+                // ★★ 被爆炸波及的怪物身上也冒一次溅血 ★★
+                //
+                //   需求："玩家的爆炸弹头没有直接命中却让怪物处于爆炸范围时，
+                //         会在怪物身上随机位置触发一次溅血光带。"
+                //
+                //   ★ 这里 primary（直接命中的那只）已经被 exclude 掉了，
+                //     所以走到这里的都是"被波及"的，补一次溅血正好。
+                //   ★ 位置用怪物身上的随机点，而不是爆炸中心 ——
+                //     看起来才像是"这只怪被炸到了"。
+                BloodSplashSonar.Emit(RandomPointOnMonster(mon), s.dir);
+            }
+        }
+
+        /// <summary>
+        /// 在怪物身上取一个随机位置（给溅血光带用）。
+        ///
+        /// ★ 在怪物碰撞体的包围盒里随机取一点，再把它拉到水平方向，
+        ///   这样血花会出现在怪物身体的不同部位，而不是永远同一个点。
+        /// </summary>
+        public static Vector3 RandomPointOnMonster(PuzzleMonster mon)
+        {
+            if (mon == null) return Vector3.zero;
+
+            Vector3 c = mon.transform.position;
+
+            Collider col = mon.GetComponentInChildren<Collider>();
+            if (col == null) return c;
+
+            Bounds b = col.bounds;
+
+            float rx = Random.Range(-0.5f, 0.5f) * b.extents.x;
+            float rz = Random.Range(-0.5f, 0.5f) * b.extents.z;
+            float ry = Random.Range(-0.35f, 0.35f) * b.extents.y;
+
+            return new Vector3(b.center.x + rx, b.center.y + ry, b.center.z + rz);
         }
 
         private static void RefreshMonsters()

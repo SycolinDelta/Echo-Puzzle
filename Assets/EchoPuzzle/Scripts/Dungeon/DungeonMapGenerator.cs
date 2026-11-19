@@ -73,12 +73,6 @@ namespace EchoPuzzle.Dungeon
         //     大矩阵 X = 块行 × 35 + 模块内 X
         //     大矩阵 Z = 块列 × 35 + 模块内 Z
         //
-        //   ★ 当前是**固定的测试布局**（见 BuildSlots）：
-        //       a21 = Z（出生房）   a22 = A（怪物房）   a23 = Y（终点房）
-        //     其余 13 格留空。
-        //
-        //   ★ 将来做随机地图：只改 BuildSlots / 调 SetSlot，生成逻辑不用动。
-        //
         //   格子里的数字：
         //     0 -> 什么都不放
         //     1 -> 地板：y=0 和 y=6 各放一个 1×1×1 立方体
@@ -566,6 +560,58 @@ namespace EchoPuzzle.Dungeon
             /* x=34 */ { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 1, 1, 4, 1, 1, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
         };
 
+        /// <summary>
+        /// ★★ 带商店的出生房（第十周任务 3）★★
+        ///
+        /// ★ 结构和 <see cref="TemplateYA"/> 完全一样，**手动可编辑**。
+        ///   出生点仍然是 8，出口门仍然是 4（Y 侧）。
+        ///
+        /// ★★ 要放商店，就在房间里把某一格改成 5 ★★
+        ///   建议挑「上下左右都是 1（地板）」的格子，保证走得到。
+        ///
+        ///   ★ 现在这里是 TemplateYA 的完整拷贝 —— 你自己往里加 5 即可。
+        ///   ★ 以前它是 MakeShopVariant(TemplateYA) 运行时生成的，
+        ///     那样没法手动改；现在改成静态矩阵字面量。
+        /// </summary>
+        public static readonly int[,] TemplateYB = new int[ModuleSize, ModuleSize]
+        {
+            /* x= 0 */ { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 1, 1, 4, 1, 1, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
+            /* x= 1 */ { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 1, 1, 4, 1, 1, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
+            /* x= 2 */ { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 1, 1, 4, 1, 1, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
+            /* x= 3 */ { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 1, 1, 4, 1, 1, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
+            /* x= 4 */ { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 1, 1, 4, 1, 1, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
+            /* x= 5 */ { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 1, 1, 4, 1, 1, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
+            /* x= 6 */ { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 1, 1, 4, 1, 1, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
+            /* x= 7 */ { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 1, 1, 4, 1, 1, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
+            /* x= 8 */ { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 1, 1, 4, 1, 1, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
+            /* x= 9 */ { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 1, 1, 4, 1, 1, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
+            /* x=10 */ { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 2, 2, 2, 2, 4, 4, 4, 4, 4, 2, 2, 2, 2, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
+            /* x=11 */ { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
+            /* x=12 */ { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
+            /* x=13 */ { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 1, 1, 5, 5, 5, 1, 1, 1, 1, 1, 1, 1, 1, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
+            /* x=14 */ { 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 1, 5, 5, 5, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2 },
+            /* x=15 */ { 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 4, 1, 1, 5, 5, 5, 1, 1, 1, 1, 1, 1, 1, 1, 4, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 },
+            /* x=16 */ { 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 4, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 4, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 },
+            /* x=17 */ { 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 1, 1, 1, 1, 1, 1, 8, 1, 1, 1, 1, 1, 1, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4 },
+            /* x=18 */ { 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 4, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 4, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 },
+            /* x=19 */ { 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 4, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 4, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 },
+            /* x=20 */ { 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2 },
+            /* x=21 */ { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
+            /* x=22 */ { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
+            /* x=23 */ { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
+            /* x=24 */ { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 2, 2, 2, 2, 4, 4, 4, 4, 4, 2, 2, 2, 2, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
+            /* x=25 */ { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 1, 1, 4, 1, 1, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
+            /* x=26 */ { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 1, 1, 4, 1, 1, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
+            /* x=27 */ { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 1, 1, 4, 1, 1, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
+            /* x=28 */ { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 1, 1, 4, 1, 1, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
+            /* x=29 */ { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 1, 1, 4, 1, 1, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
+            /* x=30 */ { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 1, 1, 4, 1, 1, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
+            /* x=31 */ { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 1, 1, 4, 1, 1, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
+            /* x=32 */ { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 1, 1, 4, 1, 1, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
+            /* x=33 */ { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 1, 1, 4, 1, 1, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
+            /* x=34 */ { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 1, 1, 4, 1, 1, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
+        };
+
         // ══════════════════════════════════════════════════════════════════════
         //              分块矩阵：把模板贴成 4 × 4 = 140 × 140 的大矩阵
         // ══════════════════════════════════════════════════════════════════════
@@ -647,7 +693,8 @@ namespace EchoPuzzle.Dungeon
             return new Dictionary<string, int[][,]>
             {
                 // ---- Y：出生房（模板里有数字 8）----
-                { "Y", new[] { TemplateYA } },
+                //   ★ TemplateYB = 带商店的出生房（第十周任务 3），和 TemplateYA 随机二选一
+                { "Y", new[] { TemplateYA, TemplateYB } },
 
                 // ---- A：怪物房（模板里有数字 3）----
                 //   ★ 目前有 3 套，后续可以继续往数组里加
@@ -678,6 +725,9 @@ namespace EchoPuzzle.Dungeon
         /// </summary>
         public static int[,] GetTemplate(string letter, System.Random rng)
         {
+            // ★ 调试：让出生房必定出带商店的那套模板（测商店用）
+            if (DebugForceShopRoom && letter == "Y") return TemplateYB;
+
             int[][,] pool = GetTemplatePool(letter);
             if (pool == null || pool.Length == 0) return null;
 
@@ -1791,6 +1841,23 @@ namespace EchoPuzzle.Dungeon
         [Tooltip("射入终点触发区的光带，颜色")]
         public Color nextStageWaveColor = Color.white;
 
+        [Header("商店格（第十周任务 3）")]
+        [Tooltip("调试：勾上之后，出生房必定使用带商店的模板（TemplateYB）。\n" +
+                 "平时保持 false（有店/没店各 50% 随机）；测试商店时勾上或按 F7")]
+        public bool debugForceShopRoom = false;
+
+        /// <summary>给静态抽模板函数读的调试开关（Inspector 里那个 bool 的镜像）。</summary>
+        public static bool DebugForceShopRoom;
+
+        [Tooltip("射入商店格的光带改成什么颜色（默认纯蓝）")]
+        public Color shopWaveColor = new Color(0.25f, 0.55f, 1f, 1f);
+
+        [Tooltip("射入商店格的光带粗细（米）")]
+        [Min(0.001f)] public float shopWaveWidth = 0.1f;
+
+        [Tooltip("射入商店格的光带不透明度")]
+        [Range(0f, 1f)] public float shopWaveAlpha = 1f;
+
         // ------------------------------------------------------------------ 运行时
 
         /// <summary>当前层数（从 1 开始）。</summary>
@@ -1871,12 +1938,143 @@ namespace EchoPuzzle.Dungeon
 
         private void Start()
         {
-            // ★ 进场景就生成第 1 层
-            RebuildStage();
+            // ★★ 开局也要"先选 buff，再建地图" ★★
+            //
+            //   需求："在地牢模式开始游戏时会跳出一个选buff的界面，
+            //         我希望游戏在这次选buff结束后才会创建并加载地图。"
+            //
+            //   之前这里是直接 RebuildStage()，地图在选 buff 之前就已经建好了，
+            //   选 buff 时其实能看到出生房（只是被全黑遮住）。
+            //   现在改成和 NextStageRoutine 一样的时序：
+            //       置 IsWaitingBuff -> 等 DungeonBuffSelectUI 弹窗并选完
+            //       -> NotifyBuffSelected 清标志 -> 这时才 RebuildStage()
+            StartCoroutine(StarterStageRoutine());
         }
+
+        /// <summary>
+        /// 开局时序：等玩家选完开局的 buff，再创建 / 加载第 1 层地图。
+        ///
+        /// ★ 和 <see cref="NextStageRoutine"/> 用同一个"等待标志"，
+        ///   所以 DungeonBuffSelectUI 的启动逻辑（等 IsWaitingBuff）不用改。
+        ///
+        /// ── ⚠ 时序陷阱（曾经导致"首次进游戏手刀/武器不受鼠标控制、不出光带脚印"）──
+        ///
+        ///   GameUI.StartGameInternal() 的流程是：
+        ///       WorldSnapshot.CaptureStart()
+        ///       ① TeleportToDungeonSpawn()   ← 这里地图还没建！
+        ///       ② QueueDungeonStarterBuff()
+        ///       ③ EnterPlaying()
+        ///
+        ///   而开局地图现在要等玩家选完 buff 才建（就是本协程）。
+        ///   所以 ① 执行时 m_HasSpawn 还是 false，
+        ///   TeleportPlayerToSpawn() 直接 return —— **玩家没有被传送**，
+        ///   还站在场景里的原始坐标上。
+        ///
+        ///   而 BuildStage() 建完图之后会自己 PlacePlayer(出生点)，
+        ///   所以位置最终是对的；但"传送"这个动作从没发生过，
+        ///   玩家的 CharacterController / 相机 / 朝向都没被初始化一次，
+        ///   表现就是：手刀和武器不跟鼠标、不出光带和脚印。
+        ///   点"重新开始"能好，是因为那时地图已经存在（m_HasSpawn=true），
+        ///   ① 这次真的传送了。
+        ///
+        ///   ✔ 修法：本协程建成地图后再显式传送 + 复位一次，
+        ///     让"首次进入"和"重新开始"走完全一样的初始化路径。
+        /// </summary>
+        private IEnumerator StarterStageRoutine()
+        {
+            // ① ★ 先把屏幕变全黑，并且清掉任何残留的地图物体 ★
+            //
+            //   需求："我要的是先跳出选buff界面，然后才显示地图。"
+            //
+            //   ★ 之前 m_FadeAlpha 初始就是 0（全黑），但这里**没有任何建图**，
+            //     所以理论上应该看不到东西。真正让"地图先出现"的，
+            //     是 GameUI.EnterPlaying() -> SetWorldVisible(true) 之后
+            //     相机开始渲染场景 —— 而场景里可能还留着上一次
+            //     （例如从暂停菜单重新开始、或编辑器里第二次 Play）
+            //     没清干净的地图。
+            //
+            //   这里显式把黑幕拉到不透明 + 清一次残骸，保证"选卡时一定看不到地图"。
+            m_FadeIn    = false;
+            m_FadeAlpha = 1f;
+            m_Fading    = false;
+
+            ClearStage();
+
+            // ② 告诉 UI："我在等 buff" —— UI 看到它就会弹开局三选一
+            m_WaitingBuff = true;
+
+            // ③ ★ 等 buff 界面真正打开，然后**立刻**建图 + 传送 ★
+            //
+            //   需求（用户给的时序）：
+            //     "1、玩家点击新游戏，跳出buff界面。
+            //      2、跳出buff界面后，立即新建地图，然后将玩家物体传送至出生点，
+            //        但是此时不要显示地图和玩家物体，不要让玩家操控玩家物体。
+            //      3、玩家选好buff后，退出buff界面，并显示地图和玩家物体。
+            //      4、玩家正常游玩。"
+            //
+            //   ★ 所以这里不能等玩家选完再建图 —— 而是**界面一出来就建**。
+            //     建好后世界保持隐藏（黑幕 + GameUI.SetWorldVisible(false)），
+            //     等 Close -> NotifyBuffSelected 清了 m_WaitingBuff 才显示。
+            //   ★ 加超时保护：万一因为某种原因界面没弹出来，
+            //     也不能让地图永远不建（会卡死在黑屏）。
+            float waitDeadline = Time.unscaledTime + StarterBuffUiTimeout;
+
+            while (!BuffUiOpen() && m_WaitingBuff &&
+                   Time.unscaledTime < waitDeadline)
+            {
+                yield return null;
+            }
+
+            // ④ 建图（RebuildStage 内部 BuildStage 会把玩家摆到格子 8）
+            RebuildStage();
+
+            // ⑤ 再走一次正式传送接口（和「重新开始」同一条路径）
+            TeleportPlayerToSpawn();
+
+            // ⑥ 等两帧让 CharacterController / 相机稳定
+            yield return null;
+            yield return null;
+
+            // ⑦ 等玩家选完 buff（Close -> NotifyBuffSelected 把标志清掉）
+            while (m_WaitingBuff) yield return null;
+
+            // ⑧ 选完才淡入 = 显示地图和玩家
+            m_FadeIn = true;
+            m_Fading = true;
+
+            while (m_Fading) yield return null;
+        }
+
+        /// <summary>buff 三选一界面当前是否开着。</summary>
+        private static bool BuffUiOpen()
+        {
+            var ui = DungeonBuffSelectUI.Instance;
+            return ui != null && ui.IsOpen;
+        }
+
+        /// <summary>
+        /// 开局等 buff 界面弹出的最长等待（秒）。
+        /// 超时就直接建图，避免因为界面异常而永远黑屏。
+        /// </summary>
+        private const float StarterBuffUiTimeout = 5f;
 
         private void Update()
         {
+            // ---- 调试：F7 切换「出生房必定带商店」并立刻重建（测商店用）----
+            //
+            // ★ 为什么用快捷键而不是只能勾 Inspector：
+            //   这个组件是运行时由 EchoRuntimeBootstrap 创建的，
+            //   编辑模式下 Hierarchy 里根本没有它，只能进 Play 之后再找。
+            if (Input.GetKeyDown(KeyCode.F7))
+            {
+                DebugForceShopRoom  = !DebugForceShopRoom;
+                debugForceShopRoom  = DebugForceShopRoom;
+
+                Debug.Log($"[调试] 出生房必定带商店 = {DebugForceShopRoom}，正在重建地图…");
+
+                RestartDungeonMap();
+            }
+
             // 淡入淡出的推进
             if (!m_Fading) return;
 
@@ -2020,6 +2218,9 @@ namespace EchoPuzzle.Dungeon
         /// </param>
         public void RebuildStage(bool advanceStage)
         {
+            // ★ 调试开关：让"出生房"必定带商店（勾上 Inspector 里的 Debug Force Shop Room 后重开一局）
+            DebugForceShopRoom = debugForceShopRoom;
+
             if (advanceStage) CurrentStage++;
             else              CurrentStage = 1;      // 重新开始 = 回到第 1 层
 
@@ -2053,10 +2254,14 @@ namespace EchoPuzzle.Dungeon
             if (m_Player == null) m_Player = FindObjectOfType<PlayerController>();
             if (m_Player != null) m_Player.ResetDungeonCooldowns();
 
-            // 生成完立刻全亮（第一次生成时没有淡出）
-            m_FadeAlpha = 0f;
-            m_FadeIn    = true;
-            m_Fading    = true;
+            // ★ 淡入不再由这里决定 —— 交给调用方 ★
+            //
+            //   · 开局（StarterStageRoutine）：保持黑幕，由协程自己淡入
+            //   · 下一层（NextStageRoutine）：同样是协程自己淡入
+            //   · 重新开始（RestartDungeonMap）：见下面，立刻全亮
+            //
+            //   以前这里无条件 m_FadeAlpha = 0f，
+            //   导致开局选完 buff 的瞬间画面是**硬切**进来的（没有淡入）。
         }
 
         /// <summary>
@@ -2078,12 +2283,23 @@ namespace EchoPuzzle.Dungeon
 
             // 回到出生点
             TeleportPlayerToSpawn();
+
+            // ★ 重新开始：立刻全亮（原来这句在 RebuildStage 里，现在搬到这里）★
+            //
+            //   重新开始没有"黑幕 -> 淡入"的过程，玩家点完按钮就该看到画面。
+            m_FadeAlpha = 0f;
+            m_FadeIn    = true;
+            m_Fading    = true;
         }
 
         /// <summary>清空上一层的所有生成物。</summary>
         private void ClearStage()
         {
             m_NextStageVolumes.Clear();
+
+            // ★ 商店的"玩家在区域内"计数是静态的，换层 / 重开时必须清零，
+            //   否则上一层的残留会让新一层的商店永远打不开。
+            DungeonShopZone.ResetForNewMap();
 
             if (m_Root == null) return;
 
@@ -2130,6 +2346,17 @@ namespace EchoPuzzle.Dungeon
                             SpawnCube(x, floorBottomY, z, floorMaterial);
                             SpawnCube(x, floorTopY,    z, floorMaterial);
                             monsterCells.Add(new Vector2Int(x, z));
+                            break;
+
+                        case 5:   // 商店格（第十周任务 3）：地板 + 上下封盖 + 商店触发区
+                            SpawnCube(x, floorBottomY, z, floorMaterial);
+                            SpawnCube(x, floorTopY,    z, floorMaterial);
+
+                            // 文档要求：y=0 和 y=6 各加一块普通墙体，中间 y=1..5 放商店区
+                            SpawnCube(x, 0, z, wallMaterial);
+                            SpawnCube(x, 6, z, wallMaterial);
+
+                            SpawnShopZone(x, z);
                             break;
 
                         case 8:   // 玩家出生点：地板 + 记下坐标
@@ -2253,6 +2480,59 @@ namespace EchoPuzzle.Dungeon
         }
 
         /// <summary>在格子 (x, z) 放一个 NextStage 触发区。</summary>
+        /// <summary>
+        /// 生成一个"商店格"（第十周任务 3）。
+        ///
+        /// 结构和终点格（<see cref="SpawnNextStage"/>）几乎一样：
+        ///   · 1×1×6 的 Trigger 盒子（无实体、无碰撞体积）
+        ///   · Hide，走和其它生成物同一套启用/删除机制
+        ///   · TriggerVolume：把射进来的光带改成蓝色（overrideColor）
+        ///   · DungeonShopZone：玩家走进来打开商店界面
+        /// </summary>
+        private void SpawnShopZone(int x, int z)
+        {
+            var go = new GameObject($"[生成] Shop ({x},{z})");
+
+            go.transform.SetParent(m_Root, false);
+            go.transform.position = new Vector3(x * cellSize, 1f, z * cellSize);
+
+            var box = go.AddComponent<BoxCollider>();
+            box.isTrigger = true;
+            box.size      = new Vector3(cellSize, 6f, cellSize);
+            box.center    = new Vector3(0f, 2f, 0f);
+
+            var hide = go.AddComponent<Hide>();
+            hide.hiding = 0;
+
+            var tv = go.AddComponent<TriggerVolume>();
+            tv.effect = TriggerEffect.None;      // 只改光带外观，不触发机关
+
+            // ★★ 玩家走进商店时**不要**在脚下炸一大团声波 ★★
+            //
+            //   需求："玩家进入商店时不会像 trigger volume 那样在脚下炸开大量光带
+            //         （应该有个开关的，把那个设为 false 即可）。"
+            //
+            //   ★ 这个开关就是 TriggerVolume.emitSonarOnTrigger。
+            //     设为 false 后，光带**穿过**这一格时仍然会被染色 / 加粗 / 改不透明度
+            //     （那是 overrideColor / overrideWidth / overrideAlpha 干的），
+            //     只是不会再额外"从玩家脚下放射一次"。
+            tv.emitSonarOnTrigger = false;
+
+            tv.overrideColor = true;
+            tv.waveColor     = shopWaveColor;
+
+            tv.overrideWidth = true;
+            tv.waveWidth     = shopWaveWidth;
+
+            tv.overrideAlpha = true;
+            tv.waveAlpha     = shopWaveAlpha;
+
+            go.AddComponent<DungeonShopZone>();
+
+            Debug.Log($"[商店] 本层商店格：格子坐标 ({x}, {z})，" +
+                      $"世界坐标 ({x * cellSize:F1}, 1, {z * cellSize:F1})");
+        }
+
         private void SpawnNextStage(int x, int z)
         {
             var go = new GameObject($"[生成] NextStage ({x},{z})");

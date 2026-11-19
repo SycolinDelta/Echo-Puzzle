@@ -66,7 +66,7 @@ namespace EchoPuzzle.Dungeon
 
 
         [Tooltip("每次齐射发射几颗子弹")]
-        [Range(1, 12)] public int bulletsPerVolley = 5;
+        [Range(1, 12)] public int bulletsPerVolley = 7;
 
         [Tooltip("子弹飞行速度（米/秒）")]
         [Min(1f)] public float bulletSpeed = 10f;
@@ -81,7 +81,7 @@ namespace EchoPuzzle.Dungeon
         public Color bulletColor = new Color(1f, 0f, 0f, 1f);
 
         [Tooltip("齐射的水平散布角度（度）。0 = 全部瞄同一点")]
-        [Range(0f, 60f)] public float bulletSpreadDegrees = 12f;
+        [Range(0f, 60f)] public float bulletSpreadDegrees = 15f;
 
         [Tooltip("同一波子弹之间的发射间隔（秒）。0 = 同时发射")]
         [Min(0f)] public float volleyStagger = 0.15f;
@@ -254,6 +254,9 @@ namespace EchoPuzzle.Dungeon
         {
             if (m_Monster == null) m_Monster = GetComponent<PuzzleMonster>();
             if (m_Monster == null) return;
+
+            // ★ 技能突进期间：移动由技能协程接管，普通巡逻暂停
+            if (IsSkillDashing) return;
 
             // ★★ 刷出停顿：还没到时间就完全静止 + 无敌 ★★
             //
@@ -644,6 +647,7 @@ namespace EchoPuzzle.Dungeon
         public void CombatTick(float now)
         {
             if (m_Monster == null) return;
+            if (IsSkillDashing) return;            // 突进中不开火
             if (DungeonPlayerFound != 1) return;   // 没发现玩家 -> 不开火
             if (!m_Firing) return;                 // 视线不通 -> 不开火
 
@@ -670,7 +674,8 @@ namespace EchoPuzzle.Dungeon
 
                     m_NextFireTime = now + fireInterval * Random.Range(0.5f, 1.5f);
 
-                    FireVolley();
+                    // ★★ 怪物技能系统：随机触发一个主动技能（弹幕扫射是其中之一）★★
+                    TriggerSkill();
                 }
 
                 return;
@@ -690,11 +695,28 @@ namespace EchoPuzzle.Dungeon
 
             m_NextFireTime = now + fireInterval * Random.Range(0.5f, 1.5f);
 
-            FireVolley();
+            // ★★ 怪物技能系统：随机触发一个主动技能 ★★
+            TriggerSkill();
+        }
+
+        /// <summary>
+        /// 触发随机主动技能（无技能组件时兜底为普通弹幕扫射）。
+        /// </summary>
+        private void TriggerSkill()
+        {
+            var skills = GetComponent<DungeonMonsterSkills>();
+            if (skills != null) skills.TriggerRandomSkill();
+            else                 FireVolley();
         }
 
         /// <summary>开火蓄力剩余时间（秒）。</summary>
         private float m_WindupLeft;
+
+        /// <summary>
+        /// ★ 技能系统正在突进（DungeonMonsterSkills.DashRoutine）。
+        ///   突进期间普通 AI（巡逻 / 开火）暂停，由技能协程接管移动。
+        /// </summary>
+        [System.NonSerialized] public bool IsSkillDashing;
 
         /// <summary>
         /// 是否正处于「开火前蓄力」。
@@ -710,7 +732,11 @@ namespace EchoPuzzle.Dungeon
 
         // ---------------------------------------------------------------- 开火实现
 
-        private void FireVolley()
+        /// <summary>
+        /// 弹幕扫射（怪物主动技能之一）。
+        /// ★ public：DungeonMonsterSkills 也会调用它。
+        /// </summary>
+        public void FireVolley()
         {
             Vector3 aim = GetAimPoint();
             Vector3 eye = transform.position;
@@ -743,8 +769,8 @@ namespace EchoPuzzle.Dungeon
             DungeonMonsterBullet.Spawn(muzzle, dir, this);
         }
 
-        /// <summary>开火瞄准点：玩家**实时**胸口位置（不是快照点）。</summary>
-        private Vector3 GetAimPoint()
+        /// <summary>开火瞄准点：玩家**实时**胸口位置（不是快照点）。★ public：技能系统读取。</summary>
+        public Vector3 GetAimPoint()
         {
             if (m_Monster == null) return Vector3.zero;
 
@@ -769,7 +795,21 @@ namespace EchoPuzzle.Dungeon
             return HasClearShot(transform.position, to);
         }
 
-        /// <summary>from 到 to 的视线上有没有遮挡（忽略自己和玩家自身的碰撞体）。</summary>
+        /// <summary>
+        /// from 到 to 的视线上有没有遮挡。
+        ///
+        /// ★ 会忽略的东西：
+        ///     · 自己（c.transform.root == transform.root）
+        ///     · 玩家（玩家本来就是要看的目标）
+        ///     · **怪物技能墙**（MonsterSkillWall）
+        ///
+        ///   需求："我希望怪物造的墙不会挡住怪物的视线检测。"
+        ///
+        ///   ★ 造墙是怪物自己的技能，用来挡玩家子弹的。
+        ///     如果它同时挡住了怪物的视线，怪物就会因为自己放的墙而失去目标，
+        ///     表现成"放完墙就傻了"。所以视线必须穿过去。
+        ///   ★ 注意：真正的墙体 / 地形**仍然**会挡住视线。
+        /// </summary>
         private bool HasClearShot(Vector3 from, Vector3 to)
         {
             Vector3 diff = to - from;
@@ -786,6 +826,9 @@ namespace EchoPuzzle.Dungeon
                 if (c == null) continue;
                 if (c.transform.root == transform.root) continue;                  // 自己
                 if (c.GetComponentInParent<PlayerController>() != null) continue;  // 玩家
+
+                // ★ 怪物技能墙不挡视线（和自己放的墙一致：子弹能穿，视线也能穿）
+                if (c.GetComponentInParent<MonsterSkillWall>() != null) continue;
 
                 return false;   // 被墙 / 其它怪物挡住
             }

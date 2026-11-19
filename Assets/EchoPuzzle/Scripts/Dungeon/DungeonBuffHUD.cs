@@ -85,21 +85,18 @@ namespace EchoPuzzle.Dungeon
 
             if (m_State != null)
             {
-                // 数量很少（个位数），直接 O(n²) 去重，比字典 + 分配省事
+                // ★ 现在是"一种 buff 一个实例 + 等级"，不需要再去重
                 for (int i = 0; i < m_State.Owned.Count; i++)
                 {
-                    DungeonBuffDef d = m_State.Owned[i];
-                    if (d == null) continue;
+                    BuffInstance inst = m_State.Owned[i];
+                    if (inst == null || inst.def == null) continue;
 
-                    bool seen = false;
-                    for (int k = 0; k < i; k++)
-                    {
-                        if (m_State.Owned[k] != null && m_State.Owned[k].id == d.id) { seen = true; break; }
-                    }
+                    // 插槽里没装（不在当前模板）的插件标一下，免得玩家以为没生效
+                    bool equipped = m_State.CountInTemplate(m_State.ActiveTemplate, inst) > 0;
 
-                    if (seen) continue;
-
-                    m_Lines.Add($"{d.name} ×{m_State.StacksOf(d)}");
+                    m_Lines.Add(equipped
+                        ? $"{inst.Name} Lv{inst.level}"
+                        : $"{inst.Name} Lv{inst.level}（未装备）");
                 }
             }
 
@@ -121,6 +118,8 @@ namespace EchoPuzzle.Dungeon
 
         private void OnGUI()
         {
+            if (DungeonModalUi.AnyOpen) return;      // 装配 / 商店 / 三选一打开时让路
+
             if (!GameUI.IsDungeonMode) return;
             if (!GameUI.GameplayInputActive && GameUI.Current != GameState.Playing) return;
 

@@ -1272,9 +1272,40 @@ namespace EchoPuzzle
                 Material m = r.sharedMaterial;
                 if (!IsOutlineLike(m)) continue;
 
+                // ★★ 排除"特效对象" ★★
+                //
+                //   DungeonWeaponBootstrap 把 DungeonWeapon / BulletBlastRenderer /
+                //   HandBladeLineRenderer 挂在**同一个 root** 上，
+                //   而爆炸圆形、怪物光环圆、手刀线段都是这些渲染器的子物体，
+                //   材质同样是 AimOverlay。不排除的话，玩家一按 Alt 闪避，
+                //   场上所有爆炸圆和光环圆都会跟着变半透明
+                //   —— 表现就是"光环在闪避期间消失了"。
+                if (IsDodgeExcludedRenderer(r)) continue;
+
                 if (!m_DodgeRenderers.Contains(r))
                     m_DodgeRenderers.Add(r);
             }
+        }
+
+        /// <summary>
+        /// 这个渲染器是不是"纯特效"，不该跟着闪避一起变透明。
+        ///
+        /// ★ 目前排除三类：
+        ///   · 爆炸圆形（BulletBlastRenderer 建出来的）
+        ///   · 怪物伤害光环（也是 BulletBlastRenderer 建的）
+        ///   · 手刀线段（HandBladeLineRenderer 建出来的）
+        ///
+        /// ★ 判定方式：看它的父级上有没有这两个渲染器组件。
+        ///   （它们都是运行时 AddComponent 到 root 上的单例组件。）
+        /// </summary>
+        private static bool IsDodgeExcludedRenderer(Renderer r)
+        {
+            if (r == null) return false;
+
+            if (r.GetComponentInParent<Dungeon.BulletBlastRenderer>() != null) return true;
+            if (r.GetComponentInParent<Dungeon.HandBladeLineRenderer>() != null) return true;
+
+            return false;
         }
 
         /// <summary>这个材质是不是"玩家轮廓 / 瞄准圈"这一类（要一起变透明的）。</summary>

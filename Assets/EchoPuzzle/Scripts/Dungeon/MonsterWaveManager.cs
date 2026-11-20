@@ -214,14 +214,19 @@ namespace EchoPuzzle.Dungeon
                 go.AddComponent<MonsterHealthBar>();
 
             // ★★ 怪物技能系统 ★★
-            //   刷出时随机 3 个主动技能 + 链式概率被动。
+            //   每只怪随机一种模板（输出 / 近战 / 控场 / 支援）；
+            //   主动技能池按模板 + 层数确定，被动按模板优先级 + 原有概率获取。
             //   ★ 必须在 DungeonResetHealth 之前投骰子 ——
             //     「生命值 ×2」被动要改 dungeonMaxHealth，复位时才生效。
             DungeonMonsterSkills skills = go.GetComponent<DungeonMonsterSkills>();
             if (skills == null)
                 skills = go.AddComponent<DungeonMonsterSkills>();
+
+            var template = (DungeonMonsterSkills.MonsterTemplate)Random.Range(
+                0, System.Enum.GetValues(typeof(DungeonMonsterSkills.MonsterTemplate)).Length);
+
             skills.RollOnSpawn(go.GetComponent<DungeonEnemy>(), monster,
-                               DungeonBuffState.StageIndex);
+                               DungeonBuffState.StageIndex, template);
 
             // 血量复位（并推一次事件给血条）
             monster.DungeonResetHealth();

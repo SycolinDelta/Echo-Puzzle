@@ -102,6 +102,12 @@ namespace EchoPuzzle.Dungeon
             public float blastRadius = 2.5f;
             public int   blastDamage = 2;
 
+            /// <summary>
+            /// 撞墙剩余反弹次数（子弹圈技能用）。0 = 撞到就爆炸，和原来一样。
+            /// 反弹只发生在撞到非玩家的世界几何体上；玩家仍然正常命中结算。
+            /// </summary>
+            public int bouncesLeft;
+
             /// <summary>生命期是否已经结束（回收用）。</summary>
             public bool dead;
         }
@@ -121,7 +127,8 @@ namespace EchoPuzzle.Dungeon
         private Color[]   m_Colors;
         private int[]     m_Triangles;
 
-        /// <summary>撞到这些层 -> 爆炸（墙 / 玩家 / 怪物）。</summary>
+        /// <summary>SphereCast 会检测这些层；命中后的处理见 FlyTick / ShouldPassThrough
+        /// （怪物、无敌玩家、己方技能墙会穿过；子弹圈子弹撞墙会反弹）。</summary>
         public LayerMask hitMask = ~((1 << 2) | (1 << 4) | (1 << 5));
 
         private SonarTrailRenderer m_Trails;
@@ -246,9 +253,32 @@ namespace EchoPuzzle.Dungeon
                     return;
                 }
 
-                b.pos = hit.point;
-
                 bool hitPlayer = hit.collider.GetComponentInParent<PlayerController>() != null;
+
+                // ★★ 子弹圈：撞墙反弹（最多 bouncesLeft 次），不消耗这次飞行时间之外的东西 ★★
+                //   玩家不受反弹影响：打到玩家永远按普通命中结算。
+                if (!hitPlayer && b.bouncesLeft > 0)
+                {
+                    Vector3 n = hit.normal;
+                    n.y = 0f;                       // 只按墙面法线的水平分量反射
+                    if (n.sqrMagnitude > 1e-6f)
+                    {
+                        n.Normalize();
+                        b.dir = Vector3.Reflect(b.dir, n);
+                        b.dir.y = 0f;
+                        if (b.dir.sqrMagnitude > 1e-6f) b.dir.Normalize();
+
+                        // 从墙面往外挪出球体半径，避免下一帧又立刻命中同一面墙
+                        b.pos = hit.point + n * (castR + 0.02f);
+                        b.bouncesLeft--;
+
+                        b.lifetime += dt;
+                        if (b.lifetime >= b.maxLifetime) Explode(b, false);
+                        return;
+                    }
+                }
+
+                b.pos = hit.point;
                 Explode(b, hitPlayer);
                 return;
             }

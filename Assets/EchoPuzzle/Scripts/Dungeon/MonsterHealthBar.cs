@@ -67,8 +67,15 @@ namespace EchoPuzzle.Dungeon
         [Tooltip("★ 图标颜色。需求：纯红色")] 
         public Color iconColor = new Color(1f, 0f, 0f, 1f);
 
-        [Tooltip("★ 图标离怪物屏幕位置左上角多远（像素，x 向右 / y 向上）")] 
+        [Tooltip("状态图标离怪物屏幕位置右上角多远（像素，x 向右 / y 向上）")] 
         public Vector2 iconOffset = new Vector2(34f, 46f);
+
+        [Header("模板标记（左上角）")]
+        [Tooltip("模板标记的边长（屏幕像素）：蓝色手枪/红色短剑/黄色圆圈/绿色加号")]
+        [Min(8f)] public float typeIconSize = 20f;
+
+        [Tooltip("模板标记离怪物屏幕位置的偏移（像素，x 向右 / y 向上）")]
+        public Vector2 typeIconOffset = new Vector2(34f, 46f);
 
         [Tooltip("★ 感叹号的高度（屏幕像素）。宽度按比例自动算")] 
         [Min(4f)] public float iconHeight = 18f;
@@ -95,7 +102,13 @@ namespace EchoPuzzle.Dungeon
 
         private Camera         m_Cam;
 
+        /// <summary>模板标记读的技能组件（刷怪时和 DungeonEnemy 一起加上，所以这里懒加载）。</summary>
+        private DungeonMonsterSkills m_Skills;
+
         private Texture2D m_White;
+
+        /// <summary>控场型的黄色圆圈标记用的环形贴图。</summary>
+        private Texture2D m_Ring;
 
         // ---- 显隐状态 ----
         //
@@ -128,6 +141,7 @@ namespace EchoPuzzle.Dungeon
         private void OnDestroy()
         {
             if (m_White != null) Destroy(m_White);
+            if (m_Ring  != null) Destroy(m_Ring);
         }
 
         // ---------------------------------------------------------------- 绘制
@@ -146,6 +160,9 @@ namespace EchoPuzzle.Dungeon
                 m_Enemy = GetComponent<DungeonEnemy>();
                 if (m_Enemy == null) m_Enemy = GetComponentInParent<DungeonEnemy>();
             }
+
+            // 技能组件同样是刷怪时才 AddComponent 的
+            if (m_Skills == null) m_Skills = GetComponent<DungeonMonsterSkills>();
 
             float now = Time.unscaledTime;
 
@@ -250,6 +267,75 @@ namespace EchoPuzzle.Dungeon
             //   ★ 图标**不受血条 alpha 影响**，也不吃距离缩放，
             //     永远清晰可见。
             DrawStateIcon(sp);
+
+            // ---- 6) ★ 模板标记（左上角，常驻显示，不吃血条淡入淡出）★ ----
+            DrawTemplateMarker(sp);
+        }
+
+        /// <summary>
+        /// 在怪物屏幕位置的**左上角**画模板标记：
+        /// 蓝色手枪=输出型、红色短剑=近战型、黄色圆圈=控场型、绿色加号=支援型。
+        /// </summary>
+        private void DrawTemplateMarker(Vector3 screenPoint)
+        {
+            if (m_Skills == null) m_Skills = GetComponent<DungeonMonsterSkills>();
+            if (m_Skills == null) return;
+            if (m_White == null) m_White = MakeWhite();
+
+            float size = Mathf.Max(8f, typeIconSize);
+            float cx = screenPoint.x - typeIconOffset.x;
+            float cy = (Screen.height - screenPoint.y) - typeIconOffset.y;
+
+            Color prev = GUI.color;
+
+            switch (m_Skills.Template)
+            {
+                case DungeonMonsterSkills.MonsterTemplate.Damage:
+                    // 蓝色手枪：枪身 + 枪管 + 握把
+                    GUI.color = new Color(0.25f, 0.55f, 1f, 1f);
+                    GUI.DrawTexture(new Rect(cx - size * 0.40f, cy - size * 0.10f,
+                                             size * 0.55f, size * 0.24f), m_White);
+                    GUI.DrawTexture(new Rect(cx + size * 0.10f, cy - size * 0.14f,
+                                             size * 0.30f, size * 0.12f), m_White);
+                    GUI.DrawTexture(new Rect(cx - size * 0.30f, cy + size * 0.12f,
+                                             size * 0.18f, size * 0.30f), m_White);
+                    break;
+
+                case DungeonMonsterSkills.MonsterTemplate.Melee:
+                    // 红色短剑：斜 45° 的剑身 + 横向护手
+                    {
+                        Matrix4x4 old = GUI.matrix;
+                        GUI.matrix = Matrix4x4.TRS(new Vector3(cx, cy, 0f),
+                                                   Quaternion.Euler(0f, 0f, -45f),
+                                                   Vector3.one);
+                        GUI.color = new Color(1f, 0.2f, 0.2f, 1f);
+                        GUI.DrawTexture(new Rect(-size * 0.06f, -size * 0.45f,
+                                                 size * 0.12f, size * 0.70f), m_White);
+                        GUI.DrawTexture(new Rect(-size * 0.25f, size * 0.20f,
+                                                 size * 0.50f, size * 0.10f), m_White);
+                        GUI.matrix = old;
+                    }
+                    break;
+
+                case DungeonMonsterSkills.MonsterTemplate.Control:
+                    // 黄色圆圈：环形贴图
+                    if (m_Ring == null) m_Ring = MakeRing();
+                    GUI.color = new Color(1f, 0.85f, 0.15f, 1f);
+                    GUI.DrawTexture(new Rect(cx - size * 0.5f, cy - size * 0.5f,
+                                             size, size), m_Ring);
+                    break;
+
+                case DungeonMonsterSkills.MonsterTemplate.Support:
+                    // 绿色加号：两条色块交叉
+                    GUI.color = new Color(0.2f, 0.95f, 0.35f, 1f);
+                    GUI.DrawTexture(new Rect(cx - size * 0.09f, cy - size * 0.42f,
+                                             size * 0.18f, size * 0.84f), m_White);
+                    GUI.DrawTexture(new Rect(cx - size * 0.42f, cy - size * 0.09f,
+                                             size * 0.84f, size * 0.18f), m_White);
+                    break;
+            }
+
+            GUI.color = prev;
         }
 
         /// <summary>
@@ -396,6 +482,40 @@ namespace EchoPuzzle.Dungeon
             };
 
             tex.SetPixel(0, 0, Color.white);
+            tex.Apply();
+
+            return tex;
+        }
+
+        /// <summary>白色的空心圆环贴图，画的时候用 GUI.color 染成黄色。</summary>
+        private static Texture2D MakeRing()
+        {
+            const int size = 32;
+            const float outer = 15f;
+            const float inner = 9f;
+
+            var tex = new Texture2D(size, size, TextureFormat.RGBA32, false)
+            {
+                hideFlags = HideFlags.HideAndDontSave,
+                filterMode = FilterMode.Bilinear
+            };
+
+            Color[] px = new Color[size * size];
+
+            for (int y = 0; y < size; y++)
+            {
+                for (int x = 0; x < size; x++)
+                {
+                    float dx = x - (size - 1) * 0.5f;
+                    float dy = y - (size - 1) * 0.5f;
+                    float d = Mathf.Sqrt(dx * dx + dy * dy);
+
+                    float edge = Mathf.Clamp01(outer - d) * Mathf.Clamp01(d - inner);
+                    px[y * size + x] = new Color(1f, 1f, 1f, edge);
+                }
+            }
+
+            tex.SetPixels(px);
             tex.Apply();
 
             return tex;

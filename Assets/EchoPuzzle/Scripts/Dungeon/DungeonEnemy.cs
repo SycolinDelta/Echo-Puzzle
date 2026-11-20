@@ -55,7 +55,7 @@ namespace EchoPuzzle.Dungeon
 
         [Header("开火")]
         [Tooltip("两次齐射之间的基础间隔（秒）。\n\n" +
-                 "★ 需求：减少 1 秒 —— 原来是 4，现在 3。")]
+                 "★ 当前值为 2 秒；实际间隔还会乘 0.5~1.5 的随机系数。")]
         [Min(0.2f)] public float fireInterval = 2f;
 
         [Tooltip("★ 每次开火前的「蓄力」停顿（秒）。需求：1 秒\n\n" +
@@ -674,7 +674,7 @@ namespace EchoPuzzle.Dungeon
 
                     m_NextFireTime = now + fireInterval * Random.Range(0.5f, 1.5f);
 
-                    // ★★ 怪物技能系统：随机触发一个主动技能（弹幕扫射是其中之一）★★
+                    // ★★ 怪物技能系统：按模板技能池触发主动技能（弹幕扫射是其中之一）★★
                     TriggerSkill();
                 }
 
@@ -695,12 +695,13 @@ namespace EchoPuzzle.Dungeon
 
             m_NextFireTime = now + fireInterval * Random.Range(0.5f, 1.5f);
 
-            // ★★ 怪物技能系统：随机触发一个主动技能 ★★
+            // ★★ 怪物技能系统：按模板技能池触发主动技能 ★★
             TriggerSkill();
         }
 
         /// <summary>
-        /// 触发随机主动技能（无技能组件时兜底为普通弹幕扫射）。
+        /// 从当前模板的技能池随机触发主动技能（第 11 层起一次触发两个）；
+        /// 无技能组件时兜底为普通弹幕扫射。
         /// </summary>
         private void TriggerSkill()
         {

@@ -7,15 +7,33 @@ namespace EchoPuzzle.Dungeon
 {
     /// <summary>
     /// 【地牢模式】怪物技能系统（MonsterWaveManager 刷怪时自动添加）。
-    /// 主动技能：刷出时随机 3 个（从 7 个里抽），每次开火随机触发一个。
-    /// 被动技能：刷出时 1/8 链式概率，每 3 层 +1/8 封顶 1/2，最多 4 个。
+    /// 主动技能：按「模板 + 层数」确定技能池（不再随机抽技能），每次攻击从池里随机触发一个；
+    ///           第 11 层起每次攻击同时触发两个不同的技能。
+    /// 被动技能：刷出时按模板优先级、以原有概率链式获取，最多 4 个。
     /// ★ 只在地牢模式创建，探秘模式没有本组件。
+    /// ★ 技能名对照：扫射=Volley、爆炸弹=ExplosiveShot、造墙=Wall、火焰地板=GroundField、
+    ///   震波=Nova、群体回血=HealAllies、突进=Dash、子弹圈=BulletRing；
+    ///   双倍生命=DoubleHealth、额外伤害=ExtraDamage、快速开火=FastFire、伤害光环=DamageAura。
     /// </summary>
     [DisallowMultipleComponent]
     public sealed class DungeonMonsterSkills : MonoBehaviour
     {
-        public enum SkillId { Volley, ExplosiveShot, Wall, GroundField, Nova, HealAllies, Dash }
+        public enum SkillId
+        {
+            Volley,        // 扫射：一大串子弹
+            ExplosiveShot, // 爆炸弹
+            Wall,          // 造墙
+            GroundField,   // 火焰地板
+            Nova,          // 震波
+            HealAllies,    // 群体回血
+            Dash,          // 突进
+            BulletRing     // 子弹圈：360° 慢速弹，撞墙反弹
+        }
+
         public enum PassiveId { DoubleHealth, ExtraDamage, FastFire, DamageAura }
+
+        /// <summary>怪物模板：输出型 / 近战型 / 控场型 / 支援型。</summary>
+        public enum MonsterTemplate { Damage, Melee, Control, Support }
 
         // ---------------------------------------------------------------- 参数
 
@@ -33,9 +51,8 @@ namespace EchoPuzzle.Dungeon
                  "需求：1")]
         [Min(0.01f)] public float explosiveBulletRadius = 1f;
 
-        [Tooltip("★ 爆炸弹的**爆炸视觉效果半径**（米）。\n\n" +
-                 "需求：5\n" +
-                 "★ 内部会换算成缩放倍率 = 这个值 ÷ 上面的子弹半径。")]
+        [Tooltip("爆炸弹的爆炸视觉效果半径（米）。\n" +
+                 "★ 内部换算成缩放倍率 = 这个值 ÷ 子弹半径；默认值与当前 Inspector 数值一致。")]
         [Min(0.1f)] public float explosiveVisualRadius = 4f;
 
         [Tooltip("造墙：墙离怪物多远（米）")]
@@ -74,6 +91,16 @@ namespace EchoPuzzle.Dungeon
 
         [Tooltip("突进：最长持续时间（秒）")]
         [Min(0.1f)] public float dashMaxDuration = 1f;
+
+        [Header("子弹圈参数")]
+        [Tooltip("子弹圈：一次 360° 发射多少发")]
+        [Range(4, 32)] public int bulletRingCount = 12;
+
+        [Tooltip("子弹圈：飞行速度 = 怪物基础弹速 × 该倍率（慢速）")]
+        [Min(0.05f)] public float bulletRingSpeedMultiplier = 0.25f;
+
+        [Tooltip("子弹圈：撞墙最多反弹几次")]
+        [Range(0, 5)] public int bulletRingBounces = 2;
 
         [Header("被动技能参数")]
         [Tooltip("基础获得概率（1/8）。每 3 层 +1/8，封顶 1/2")]
@@ -125,6 +152,9 @@ namespace EchoPuzzle.Dungeon
         public readonly List<SkillId> Actives = new List<SkillId>(3);
         public readonly List<PassiveId> Passives = new List<PassiveId>(4);
 
+        /// <summary>本怪物的模板（输出 / 近战 / 控场 / 支援），由刷怪时随机指定。</summary>
+        public MonsterTemplate Template { get; private set; }
+
         private DungeonEnemy  m_Enemy;
         private PuzzleMonster m_Monster;
         private PlayerHealth  m_PlayerHealth;
@@ -132,27 +162,49 @@ namespace EchoPuzzle.Dungeon
         private float         m_NextAuraTick;
         private bool          m_Rolled;
 
+        /// <summary>四种模板的被动获取优先级：随机判定成功时，取当前还没拿到的第一个。</summary>
+        private static readonly PassiveId[][] s_PassivePriority =
+        {
+            // 输出型：额外伤害、快速开火、伤害光环、双倍生命
+            new[] { PassiveId.ExtraDamage, PassiveId.FastFire, PassiveId.DamageAura, PassiveId.DoubleHealth },
+            // 近战型：伤害光环、双倍生命、额外伤害、快速开火
+            new[] { PassiveId.DamageAura, PassiveId.DoubleHealth, PassiveId.ExtraDamage, PassiveId.FastFire },
+            // 控场型：快速开火、双倍生命、伤害光环、额外伤害
+            new[] { PassiveId.FastFire, PassiveId.DoubleHealth, PassiveId.DamageAura, PassiveId.ExtraDamage },
+            // 支援型：双倍生命、快速开火、伤害光环、额外伤害
+            new[] { PassiveId.DoubleHealth, PassiveId.FastFire, PassiveId.DamageAura, PassiveId.ExtraDamage },
+        };
+
         // ---------------------------------------------------------------- 刷怪骰子
 
         /// <summary>
-        /// 刷出时投骰子。★ 必须在 DungeonResetHealth 之前调用（让 ×2 血量生效）。
+        /// 兼容旧调用：不指定模板时随机选一种。
+        /// ★ 必须在 DungeonResetHealth 之前调用（让 ×2 血量生效）。
         /// </summary>
         public void RollOnSpawn(DungeonEnemy enemy, PuzzleMonster monster, int stageIndex)
+        {
+            RollOnSpawn(enemy, monster, stageIndex,
+                (MonsterTemplate)Random.Range(0, System.Enum.GetValues(typeof(MonsterTemplate)).Length));
+        }
+
+        /// <summary>
+        /// 刷出时确定模板 / 主动技能池 / 被动骰子。
+        /// ★ 必须在 DungeonResetHealth 之前调用（让 ×2 血量生效）。
+        /// </summary>
+        public void RollOnSpawn(DungeonEnemy enemy, PuzzleMonster monster, int stageIndex,
+                                MonsterTemplate template)
         {
             m_Enemy   = enemy;
             m_Monster = monster;
             m_Rolled  = true;
+            Template  = template;
 
             Actives.Clear();
-
-            var all = new List<SkillId>((SkillId[])System.Enum.GetValues(typeof(SkillId)));
-            Shuffle(all);
-
-            for (int i = 0; i < Mathf.Min(3, all.Count); i++)
-                Actives.Add(all[i]);
+            Actives.AddRange(BuildActivePool(template, stageIndex));
 
             Passives.Clear();
 
+            // ★ 概率公式沿用现有代码，一行未改：每 3 层提升一次，封顶 1/2。
             float chance = Mathf.Min(passiveMaxChance,
                 passiveBaseChance * (1 + Mathf.Max(0, stageIndex - 1) / 3));
 
@@ -166,24 +218,76 @@ namespace EchoPuzzle.Dungeon
             }
 
             if (Passives.Count > 0)
-                Debug.Log($"[怪物技能] {name} 被动 x{Passives.Count}: {string.Join(", ", Passives)}（层 {stageIndex}，概率 {chance:0.###}）");
+                Debug.Log($"[怪物技能] {name} {Template} 被动 x{Passives.Count}: {string.Join(", ", Passives)}（层 {stageIndex}，概率 {chance:0.###}）");
         }
 
-        private PassiveId PickUnusedPassive()
+        /// <summary>
+        /// 按模板和层数返回固定主动技能池（每次攻击从池里随机选，而不是刷怪时随机抽技能）。
+        /// 分层：1-2 / 3-5 / 6-10 / 11+。
+        /// </summary>
+        private static SkillId[] BuildActivePool(MonsterTemplate template, int stageIndex)
         {
-            var all = (PassiveId[])System.Enum.GetValues(typeof(PassiveId));
-
-            PassiveId pick = (PassiveId)(-1);
-            int n = 0;
-
-            for (int i = 0; i < all.Length; i++)
+            if (stageIndex <= 2)
             {
-                if (Passives.Contains(all[i])) continue;
-                n++;
-                if (Random.Range(1, n + 1) == n) pick = all[i];
+                switch (template)
+                {
+                    case MonsterTemplate.Damage:  return new[] { SkillId.Volley };
+                    case MonsterTemplate.Melee:   return new[] { SkillId.Nova };
+                    case MonsterTemplate.Control: return new[] { SkillId.Wall };
+                    default:                      return new[] { SkillId.HealAllies };
+                }
             }
 
-            return pick;
+            if (stageIndex <= 5)
+            {
+                switch (template)
+                {
+                    case MonsterTemplate.Damage:  return new[] { SkillId.Volley };
+                    case MonsterTemplate.Melee:   return new[] { SkillId.Nova, SkillId.Dash };
+                    case MonsterTemplate.Control: return new[] { SkillId.Wall, SkillId.GroundField };
+                    default:                      return new[] { SkillId.HealAllies };
+                }
+            }
+
+            if (stageIndex <= 10)
+            {
+                switch (template)
+                {
+                    case MonsterTemplate.Damage:
+                        return new[] { SkillId.Volley, SkillId.ExplosiveShot };
+                    case MonsterTemplate.Melee:
+                        return new[] { SkillId.Nova, SkillId.Dash };
+                    case MonsterTemplate.Control:
+                        return new[] { SkillId.Wall, SkillId.GroundField, SkillId.BulletRing };
+                    default:
+                        return new[] { SkillId.HealAllies, SkillId.Wall, SkillId.Volley };
+                }
+            }
+
+            // 11 层及以后（每次攻击双技能，在 TriggerRandomSkill 里处理）
+            switch (template)
+            {
+                case MonsterTemplate.Damage:
+                    return new[] { SkillId.Volley, SkillId.ExplosiveShot, SkillId.BulletRing };
+                case MonsterTemplate.Melee:
+                    return new[] { SkillId.Nova, SkillId.Dash, SkillId.Volley };
+                case MonsterTemplate.Control:
+                    return new[] { SkillId.Wall, SkillId.GroundField, SkillId.BulletRing };
+                default:
+                    return new[] { SkillId.HealAllies, SkillId.Wall, SkillId.Volley };
+            }
+        }
+
+        /// <summary>按当前模板的优先级取第一个还没获得的被动。</summary>
+        private PassiveId PickUnusedPassive()
+        {
+            PassiveId[] priority = s_PassivePriority[(int)Template];
+
+            for (int i = 0; i < priority.Length; i++)
+                if (!Passives.Contains(priority[i]))
+                    return priority[i];
+
+            return (PassiveId)(-1);
         }
 
         private void ApplyPassive(PassiveId p)
@@ -210,7 +314,10 @@ namespace EchoPuzzle.Dungeon
 
         // ---------------------------------------------------------------- 触发
 
-        /// <summary>开火：随机触发一个主动技能（蓄力结束时由 DungeonEnemy 调用）。</summary>
+        /// <summary>
+        /// 开火：从本模板的技能池里随机触发技能（蓄力结束时由 DungeonEnemy 调用）。
+        /// ★ 第 11 层起每次攻击同时释放两个不同的技能。
+        /// </summary>
         public void TriggerRandomSkill()
         {
             if (!m_Rolled || Actives.Count == 0)
@@ -219,7 +326,20 @@ namespace EchoPuzzle.Dungeon
                 return;
             }
 
-            switch (Actives[Random.Range(0, Actives.Count)])
+            int first = Random.Range(0, Actives.Count);
+            FireSkill(Actives[first]);
+
+            if (Dungeon.DungeonBuffState.StageIndex >= 11 && Actives.Count >= 2)
+            {
+                int second = Random.Range(0, Actives.Count - 1);
+                if (second >= first) second++;   // 跳过第一个，保证两个技能不同
+                FireSkill(Actives[second]);
+            }
+        }
+
+        private void FireSkill(SkillId id)
+        {
+            switch (id)
             {
                 case SkillId.Volley:        DoVolley();        break;
                 case SkillId.ExplosiveShot: DoExplosiveShot(); break;
@@ -228,6 +348,7 @@ namespace EchoPuzzle.Dungeon
                 case SkillId.Nova:          DoNova();          break;
                 case SkillId.HealAllies:    DoHealAllies();    break;
                 case SkillId.Dash:          DoDash();          break;
+                case SkillId.BulletRing:    DoBulletRing();    break;
             }
         }
 
@@ -366,6 +487,42 @@ namespace EchoPuzzle.Dungeon
             if (dist > dashMaxDistance || dist < 0.5f) { DoVolley(); return; }
 
             StartCoroutine(DashRoutine());
+        }
+
+        /// <summary>
+        /// 子弹圈：以怪物为中心 360° 均匀发射一圈慢速子弹。
+        /// 每发子弹的撞墙反弹次数由 MonsterBulletRenderer.Body.bouncesLeft 控制。
+        /// </summary>
+        private void DoBulletRing()
+        {
+            if (m_Enemy == null) return;
+
+            MonsterBulletRenderer r = MonsterBulletRenderer.Instance;
+            if (r == null)
+            {
+                var go = new GameObject("MonsterBulletRenderer");
+                r = go.AddComponent<MonsterBulletRenderer>();
+            }
+
+            int count = Mathf.Max(4, bulletRingCount);
+            float speed = Mathf.Max(0.5f,
+                m_Enemy.bulletSpeed * Mathf.Max(0.05f, bulletRingSpeedMultiplier));
+
+            // 抬高一点，避免子弹一生成就碰到地面
+            Vector3 origin = transform.position + Vector3.up * 0.8f;
+
+            for (int i = 0; i < count; i++)
+            {
+                float a = i * Mathf.PI * 2f / count;
+                Vector3 dir = new Vector3(Mathf.Cos(a), 0f, Mathf.Sin(a));
+
+                MonsterBulletRenderer.Body b = r.Fire(origin, dir, m_Enemy);
+                if (b == null) continue;
+
+                b.speed        = speed;
+                b.color        = new Color(0.55f, 0.35f, 1f, 1f);
+                b.bouncesLeft  = Mathf.Max(0, bulletRingBounces);
+            }
         }
 
         private IEnumerator DashRoutine()
@@ -532,15 +689,6 @@ namespace EchoPuzzle.Dungeon
         }
 
         // ---------------------------------------------------------------- 工具
-
-        private static void Shuffle(List<SkillId> list)
-        {
-            for (int i = list.Count - 1; i > 0; i--)
-            {
-                int j = Random.Range(0, i + 1);
-                (list[i], list[j]) = (list[j], list[i]);
-            }
-        }
 
         private Vector3 PlayerPos()
         {

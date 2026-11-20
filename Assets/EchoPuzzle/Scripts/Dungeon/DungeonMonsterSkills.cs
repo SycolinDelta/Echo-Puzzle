@@ -396,12 +396,10 @@ namespace EchoPuzzle.Dungeon
             //   ★ 这是**爆炸弹专属**的，普通子弹仍用渲染器的全局 radius。
             b.selfRadius = explosiveBulletRadius;
 
-            // ★★ 爆炸视觉效果半径：5 米 ★★
-            //
-            //   需求："爆炸视觉效果改成半径5m"
+            // ★★ 爆炸视觉效果半径：取 explosiveVisualRadius（当前 4 米）★★
             //
             //   视觉半径 = selfRadius × explodeScaleMultiplier
-            //   所以倍率 = 目标半径 ÷ 子弹半径（5 / 1 = 5）。
+            //   所以倍率 = 目标半径 ÷ 子弹半径（当前 4 / 1 = 4）。
             //   ★ 用反推而不是写死倍率，以后改子弹半径也不会错位。
             b.explodeScaleMultiplier = Mathf.Max(1f,
                 explosiveVisualRadius / Mathf.Max(0.01f, explosiveBulletRadius));

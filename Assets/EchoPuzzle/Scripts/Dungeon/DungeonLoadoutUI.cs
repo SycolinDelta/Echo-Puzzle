@@ -394,14 +394,27 @@ namespace EchoPuzzle.Dungeon
 
                     bool clicked = GUI.Button(box, GUIContent.none, m_ClickArea);
 
-                    Color p2 = GUI.color;
+                    // 底色：装了 = 该颜色铺一层；空槽 = 很淡的灰
+                    Color tint  = SlotRules.UiColor(color);
+                    Color p2    = GUI.color;
+
                     GUI.color = equipped != null
-                        ? new Color(SlotRules.UiColor(color).r, SlotRules.UiColor(color).g, SlotRules.UiColor(color).b, 0.22f)
-                        : cardColor;
+                        ? new Color(tint.r, tint.g, tint.b, 0.26f)
+                        : new Color(1f, 1f, 1f, 0.04f);
                     GUI.DrawTexture(box, m_Pixel);
                     GUI.color = p2;
 
-                    DrawBorder(box);
+                    // 边框：装了用纯色（字和格子一眼对上），空槽用很淡的白
+                    DrawBorder(box, equipped != null ? tint : new Color(1f, 1f, 1f, 0.14f));
+
+                    // 装了东西再套一圈内框，把字"围"在自己格子里
+                    if (equipped != null)
+                    {
+                        float inset = Mathf.Max(3f, slot * 0.10f);
+                        DrawBorder(new Rect(box.x + inset, box.y + inset,
+                                            box.width - inset * 2f, box.height - inset * 2f),
+                                   new Color(tint.r, tint.g, tint.b, 0.45f));
+                    }
 
                     if (equipped != null)
                         GUI.Label(box, ShortTag(equipped), m_SlotStyle);
@@ -484,8 +497,14 @@ namespace EchoPuzzle.Dungeon
 
         private void DrawBorder(Rect r)
         {
+            DrawBorder(r, borderColor);
+        }
+
+        /// <summary>用指定颜色画四边框（按插件颜色给格子描边）。</summary>
+        private void DrawBorder(Rect r, Color color)
+        {
             Color prev = GUI.color;
-            GUI.color = borderColor;
+            GUI.color = color;
 
             GUI.DrawTexture(new Rect(r.x,        r.y,        r.width, 2f),       m_Pixel);
             GUI.DrawTexture(new Rect(r.x,        r.yMax - 2f, r.width, 2f),      m_Pixel);
@@ -523,11 +542,20 @@ namespace EchoPuzzle.Dungeon
             };
             m_SmallStyle.normal.textColor = dimColor;
 
-            // 插槽格子里的那个字：居中、比行标签大一点
+            // 插槽格子里的那个字：**严格居中**
+            //
+            // ★ padding / margin 必须清零：
+            //   GUI.skin.label 默认带左内边距和行高边距，
+            //   不清掉的话字会往右下偏，看起来就不像"这个格子里的东西"。
             m_SlotStyle = new GUIStyle(GUI.skin.label)
             {
-                font = f, fontSize = Mathf.RoundToInt(slotSize * 0.46f),
+                font = f, fontSize = 24,
                 alignment = TextAnchor.MiddleCenter, fontStyle = FontStyle.Bold,
+                padding   = new RectOffset(0, 0, 0, 0),
+                margin    = new RectOffset(0, 0, 0, 0),
+                border    = new RectOffset(0, 0, 0, 0),
+                clipping  = TextClipping.Overflow,
+                wordWrap  = false,
             };
             m_SlotStyle.normal.textColor = textColor;
 

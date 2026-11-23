@@ -31,13 +31,13 @@ namespace EchoPuzzle.Dungeon
         public KeyCode switchKey = KeyCode.E;
 
         [Header("版式（1080 高度基准的像素）")]
-        public float panelWidth  = 1500f;
-        public float panelHeight = 900f;
+        public float panelWidth  = 1560f;
+        public float panelHeight = 1040f;
         public float titleSize   = 46f;
         public float labelSize   = 26f;
-        public float smallSize   = 20f;
-        public float slotSize    = 62f;
-        public float slotGap     = 8f;
+        public float smallSize   = 19f;
+        public float slotSize    = 46f;
+        public float slotGap     = 6f;
 
         [Header("颜色")]
         public Color textColor      = Color.white;
@@ -312,6 +312,11 @@ namespace EchoPuzzle.Dungeon
 
             float y = area.y + 50f;
 
+            // ★ 横向能放几个格子：红槽可能多到几十个，必须按宽度自动换行
+            float boxX0  = area.x + 130f;
+            float maxX   = area.xMax - 14f;
+            int   perLine = Mathf.Max(1, Mathf.FloorToInt((maxX - boxX0 + slotGap) / (slotSize + slotGap)));
+
             for (int c = 0; c < SlotRules.ColorCount; c++)
             {
                 var color = (PluginColor)c;
@@ -331,11 +336,22 @@ namespace EchoPuzzle.Dungeon
 
                 GUI.color = cprev;
 
-                float x = area.x + 130f;
+                // 这一色要占几行（0 个槽也占一行高度，免得排版跳动）
+                int lines = Mathf.Max(1, Mathf.CeilToInt(cap / (float)perLine));
+
+                float bx = boxX0;
+                float by = y;
 
                 for (int i = 0; i < cap; i++)
                 {
-                    var box = new Rect(x, y, slotSize, slotSize);
+                    // 换行
+                    if (i > 0 && (i % perLine) == 0)
+                    {
+                        bx  = boxX0;
+                        by += slotSize + slotGap;
+                    }
+
+                    var box = new Rect(bx, by, slotSize, slotSize);
 
                     BuffInstance equipped = (i < list.Count) ? list[i] : null;
 
@@ -357,36 +373,47 @@ namespace EchoPuzzle.Dungeon
                                   ShortName(equipped), m_SmallStyle);
                     }
 
-                    if (!clicked) { x += slotSize + slotGap; continue; }
+                    if (clicked) OnSlotClicked(st, template, color, i, equipped);
 
-                    // ---- 点击处理 ----
-                    if (equipped != null)
-                    {
-                        st.Unequip(template, color, i);
-                        ShowHint($"拆下 {equipped.Name}");
-                    }
-                    else if (m_Selected == null)
-                    {
-                        ShowHint("先在左边点一个插件");
-                    }
-                    else if (m_Selected.def.color != color)
-                    {
-                        ShowHint($"{m_Selected.Name} 只能插进 {SlotRules.NameOf(m_Selected.def.color)}槽");
-                    }
-                    else if (st.TryEquip(template, m_Selected, out string reason))
-                    {
-                        m_Selected = null;
-                        ShowHint("");
-                    }
-                    else
-                    {
-                        ShowHint(reason ?? "装不下");
-                    }
-
-                    x += slotSize + slotGap;
+                    bx += slotSize + slotGap;
                 }
 
-                y += slotSize + 12f;
+                // 行高按"这一色实际占了几行"推进
+                y += lines * slotSize + (lines - 1) * slotGap + 10f;
+            }
+        }
+
+        private void OnSlotClicked(DungeonBuffState st, int template, PluginColor color, int index, BuffInstance equipped)
+        {
+            // 有东西 -> 拆下
+            if (equipped != null)
+            {
+                st.Unequip(template, color, index);
+                ShowHint($"拆下 {equipped.Name}");
+                return;
+            }
+
+            // 空格 -> 把选中的插件装进来
+            if (m_Selected == null)
+            {
+                ShowHint("先在左边点一个插件");
+                return;
+            }
+
+            if (m_Selected.def.color != color)
+            {
+                ShowHint($"{m_Selected.Name} 只能插进 {SlotRules.NameOf(m_Selected.def.color)}槽");
+                return;
+            }
+
+            if (st.TryEquip(template, m_Selected, out string reason))
+            {
+                m_Selected = null;
+                ShowHint("");
+            }
+            else
+            {
+                ShowHint(reason ?? "装不下");
             }
         }
 

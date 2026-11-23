@@ -80,6 +80,9 @@ namespace EchoPuzzle.Dungeon
         private bool m_OrangeBought;
         private bool m_UpgradeBought;
 
+        /// <summary>已经掷过陈列的商店格实例 id（0 = 还没掷过）。</summary>
+        private int m_OfferZoneId;
+
         private DungeonShopZone m_Owner;
         private float           m_PrevTimeScale = 1f;
 
@@ -149,7 +152,17 @@ namespace EchoPuzzle.Dungeon
             m_Owner = zone;
             IsOpen  = true;
 
-            RollOffer();
+            // ★★ 同一个商店格**只掷一次**陈列 ★★
+            //
+            //   之前是每次打开都 RollOffer()，于是玩家走出去再走进来就能
+            //   免费换一批陈列 —— 等于无限刷新。现在按"商店格实例"记忆：
+            //   同一格永远给同一批货，"已购买"状态也一起保留。
+            //   换层 / 重开会生成新的商店格（实例 id 不同），自然会重新掷。
+            if (m_OfferZoneId != zone.GetInstanceID())
+            {
+                m_OfferZoneId = zone.GetInstanceID();
+                RollOffer();
+            }
 
             m_PrevTimeScale = Time.timeScale;
             Time.timeScale  = 0f;

@@ -31,12 +31,12 @@ namespace EchoPuzzle.Dungeon
         public KeyCode switchKey = KeyCode.E;
 
         [Header("版式（1080 高度基准的像素）")]
-        public float panelWidth  = 1560f;
+        public float panelWidth  = 1740f;
         public float panelHeight = 1040f;
         public float titleSize   = 46f;
         public float labelSize   = 26f;
-        public float smallSize   = 19f;
-        public float slotSize    = 46f;
+        public float smallSize   = 20f;
+        public float slotSize    = 58f;
         public float slotGap     = 6f;
 
         [Header("颜色")]
@@ -63,6 +63,7 @@ namespace EchoPuzzle.Dungeon
         private GUIStyle m_TitleStyle;
         private GUIStyle m_LabelStyle;
         private GUIStyle m_SmallStyle;
+        private GUIStyle m_SlotStyle;
         private GUIStyle m_ClickArea;
 
         private string m_Hint = "";
@@ -186,19 +187,23 @@ namespace EchoPuzzle.Dungeon
                       $"·　R 关闭　·　E 切换模板（战斗中也可以）", m_SmallStyle);
 
             // 左：背包
-            float bagW = 420f;
+            float bagW = 400f;
             var bag = new Rect(panel.x + 24f, panel.y + 120f, bagW, panel.height - 180f);
             DrawBorder(bag);
             GUI.Label(new Rect(bag.x + 14f, bag.y + 8f, bag.width - 28f, 30f), "背包", m_LabelStyle);
             DrawBag(st, new Rect(bag.x + 12f, bag.y + 44f, bag.width - 24f, bag.height - 56f));
 
-            // 右：两个模板
-            float rightX = bag.xMax + 24f;
-            float rightW = panel.xMax - 24f - rightX;
-            float rightH = (panel.height - 150f) * 0.5f;
+            // 右：两个模板**并排两列**（上下堆叠的话每个模板只剩半屏高，格子只能很小）
+            float rightX = bag.xMax + 20f;
+            float avail  = panel.xMax - 24f - rightX;
+            float colGap = 20f;
+            float colW   = (avail - colGap) * 0.5f;
 
-            DrawTemplate(st, 0, new Rect(rightX, panel.y + 120f, rightW, rightH - 10f));
-            DrawTemplate(st, 1, new Rect(rightX, panel.y + 120f + rightH, rightW, rightH - 10f));
+            float colY = panel.y + 120f;
+            float colH = panel.height - 190f;
+
+            DrawTemplate(st, 0, new Rect(rightX, colY, colW, colH));
+            DrawTemplate(st, 1, new Rect(rightX + colW + colGap, colY, colW, colH));
 
             // 底部提示
             if (!string.IsNullOrEmpty(m_Hint) && Time.unscaledTime < m_HintUntil)
@@ -369,8 +374,8 @@ namespace EchoPuzzle.Dungeon
 
                     if (equipped != null)
                     {
-                        GUI.Label(new Rect(box.x + 3f, box.y + 4f, box.width - 6f, box.height - 8f),
-                                  ShortName(equipped), m_SmallStyle);
+                        // 格子里只放一个字（颜色由整行的颜色表达），字小但一眼能认
+                        GUI.Label(box, ShortTag(equipped), m_SlotStyle);
                     }
 
                     if (clicked) OnSlotClicked(st, template, color, i, equipped);
@@ -414,6 +419,24 @@ namespace EchoPuzzle.Dungeon
             else
             {
                 ShowHint(reason ?? "装不下");
+            }
+        }
+
+        private static string ShortTag(BuffInstance inst)
+        {
+            if (inst == null || inst.def == null) return "?";
+
+            switch (inst.def.effectId)
+            {
+                case "dmg":     return "伤";
+                case "rate":    return "速";
+                case "mana":    return "耗";
+                case "aoe":     return "爆";
+                case "shotgun": return "霰";
+                case "volley":  return "连";
+                case "bounce":  return "跳";
+                case "pierce":  return "穿";
+                default:        return "?";
             }
         }
 
@@ -472,6 +495,14 @@ namespace EchoPuzzle.Dungeon
                 alignment = TextAnchor.MiddleLeft, wordWrap = true,
             };
             m_SmallStyle.normal.textColor = dimColor;
+
+            // 插槽格子里的那个字：居中、比行标签大一点
+            m_SlotStyle = new GUIStyle(GUI.skin.label)
+            {
+                font = f, fontSize = Mathf.RoundToInt(slotSize * 0.46f),
+                alignment = TextAnchor.MiddleCenter, fontStyle = FontStyle.Bold,
+            };
+            m_SlotStyle.normal.textColor = textColor;
 
             m_ClickArea = new GUIStyle(GUI.skin.button)
             {

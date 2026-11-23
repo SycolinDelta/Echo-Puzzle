@@ -64,6 +64,7 @@ namespace EchoPuzzle.Dungeon
         private GUIStyle m_LabelStyle;
         private GUIStyle m_SmallStyle;
         private GUIStyle m_SlotStyle;
+        private GUIStyle m_RowStyle;
         private GUIStyle m_ClickArea;
 
         private string m_Hint = "";
@@ -308,61 +309,91 @@ namespace EchoPuzzle.Dungeon
             Color prev = GUI.color;
             if (active) GUI.color = activeColor;
 
-            GUI.Label(new Rect(area.x + 16f, area.y + 8f, area.width - 32f, 34f),
+            GUI.Label(new Rect(area.x + 16f, area.y + 8f, area.width - 32f, 38f),
                       $"模板 {(template == 0 ? "A" : "B")}　{SlotRules.NameOf(st.Tier)}级" +
                       (active ? "　（当前使用）" : "　（按 E 切换）"),
                       m_LabelStyle);
 
             GUI.color = prev;
 
-            float y = area.y + 50f;
+            const float headerH = 58f;
+            const float labelW  = 150f;
+            const float padX    = 16f;
 
-            // ★ 横向能放几个格子：红槽可能多到几十个，必须按宽度自动换行
-            float boxX0  = area.x + 130f;
+            float y      = area.y + headerH;
+            float availH = area.height - headerH - 12f;
+
+            float boxX0  = area.x + padX + labelW;
             float maxX   = area.xMax - 14f;
-            int   perLine = Mathf.Max(1, Mathf.FloorToInt((maxX - boxX0 + slotGap) / (slotSize + slotGap)));
+            float availW = maxX - boxX0;
+
+            // ★ 找一个"能塞进这个区域的最大格子尺寸" —— 区域越大字就越大
+            float slot = 40f;
+            float gap  = 6f;
+
+            for (float s = 132f; s >= 40f; s -= 2f)
+            {
+                float g   = Mathf.Max(4f, s * 0.10f);
+                int   per = Mathf.Max(1, Mathf.FloorToInt((availW + g) / (s + g)));
+
+                float total = 0f;
+
+                for (int c = 0; c < SlotRules.ColorCount; c++)
+                {
+                    int cap   = st.CapOf(template, (PluginColor)c);
+                    int lines = Mathf.Max(1, Mathf.CeilToInt(cap / (float)per));
+
+                    total += lines * s + (lines - 1) * g + s * 0.22f;
+                }
+
+                if (total <= availH) { slot = s; gap = g; break; }
+            }
+
+            // 行标签和格子里的字都跟着格子尺寸走
+            m_RowStyle.fontSize  = Mathf.RoundToInt(Mathf.Clamp(slot * 0.40f, 16f, 34f));
+            m_SlotStyle.fontSize = Mathf.RoundToInt(slot * 0.55f);
+
+            int perLine = Mathf.Max(1, Mathf.FloorToInt((availW + gap) / (slot + gap)));
 
             for (int c = 0; c < SlotRules.ColorCount; c++)
             {
                 var color = (PluginColor)c;
 
-                int cap  = st.CapOf(template, color);
-                int used = st.UsedOf(template, color);
-                var list = st.SlotsOf(template, color);
+                int cap   = st.CapOf(template, color);
+                int used  = st.UsedOf(template, color);
+                var list  = st.SlotsOf(template, color);
 
                 // 红槽没填满 -> 标红提醒
                 bool warn = color == PluginColor.Red && used < cap;
 
+                int lines = Mathf.Max(1, Mathf.CeilToInt(cap / (float)perLine));
+
                 Color cprev = GUI.color;
                 GUI.color = warn ? warnColor : SlotRules.UiColor(color);
 
-                GUI.Label(new Rect(area.x + 16f, y + 6f, 120f, 30f),
-                          $"{SlotRules.NameOf(color)} {used}/{cap}", m_SmallStyle);
+                GUI.Label(new Rect(area.x + padX, y + slot * 0.5f - m_RowStyle.fontSize * 0.5f,
+                                   labelW - 8f, slot * 0.8f),
+                          $"{SlotRules.NameOf(color)} {used}/{cap}", m_RowStyle);
 
                 GUI.color = cprev;
-
-                // 这一色要占几行（0 个槽也占一行高度，免得排版跳动）
-                int lines = Mathf.Max(1, Mathf.CeilToInt(cap / (float)perLine));
 
                 float bx = boxX0;
                 float by = y;
 
                 for (int i = 0; i < cap; i++)
                 {
-                    // 换行
                     if (i > 0 && (i % perLine) == 0)
                     {
                         bx  = boxX0;
-                        by += slotSize + slotGap;
+                        by += slot + gap;
                     }
 
-                    var box = new Rect(bx, by, slotSize, slotSize);
+                    var box = new Rect(bx, by, slot, slot);
 
                     BuffInstance equipped = (i < list.Count) ? list[i] : null;
 
                     bool clicked = GUI.Button(box, GUIContent.none, m_ClickArea);
 
-                    // 底色：装了东西 = 该颜色半透明
                     Color p2 = GUI.color;
                     GUI.color = equipped != null
                         ? new Color(SlotRules.UiColor(color).r, SlotRules.UiColor(color).g, SlotRules.UiColor(color).b, 0.22f)
@@ -373,18 +404,14 @@ namespace EchoPuzzle.Dungeon
                     DrawBorder(box);
 
                     if (equipped != null)
-                    {
-                        // 格子里只放一个字（颜色由整行的颜色表达），字小但一眼能认
                         GUI.Label(box, ShortTag(equipped), m_SlotStyle);
-                    }
 
                     if (clicked) OnSlotClicked(st, template, color, i, equipped);
 
-                    bx += slotSize + slotGap;
+                    bx += slot + gap;
                 }
 
-                // 行高按"这一色实际占了几行"推进
-                y += lines * slotSize + (lines - 1) * slotGap + 10f;
+                y += lines * slot + (lines - 1) * gap + slot * 0.22f;
             }
         }
 
@@ -503,6 +530,14 @@ namespace EchoPuzzle.Dungeon
                 alignment = TextAnchor.MiddleCenter, fontStyle = FontStyle.Bold,
             };
             m_SlotStyle.normal.textColor = textColor;
+
+            // 颜色行标签（白 1/3）：字号每帧按格子大小重设
+            m_RowStyle = new GUIStyle(GUI.skin.label)
+            {
+                font = f, fontSize = 24,
+                alignment = TextAnchor.MiddleLeft, fontStyle = FontStyle.Bold,
+            };
+            m_RowStyle.normal.textColor = textColor;
 
             m_ClickArea = new GUIStyle(GUI.skin.button)
             {

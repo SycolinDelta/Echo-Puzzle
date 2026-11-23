@@ -55,6 +55,14 @@ namespace EchoPuzzle.Dungeon
         /// <summary>最多能叠几层。</summary>
         [Min(1)] public int maxStacks = 5;
 
+        // ---- 第十一周任务：颜色体系 ----
+
+        [Tooltip("插件颜色。必须插进同颜色的槽位才生效")]
+        public PluginColor color = PluginColor.White;
+
+        [Tooltip("效果标识：跨颜色共用。紫爆炸弹头 + 橙爆炸弹头 -> 同一个效果、等级相加")]
+        public string effectId = "";
+
         // ---- 效果（乘区）----
 
         /// <summary>伤害倍率。</summary>
@@ -144,7 +152,9 @@ namespace EchoPuzzle.Dungeon
     /// </summary>
     public static class DungeonBuffPool
     {
-        public static readonly List<DungeonBuffDef> All = new List<DungeonBuffDef>
+        // ⚠️ 第十一周起停用：这套无颜色的旧池子由下面的彩色插件池取代。
+        //   先留着（里面的中文描述和数值是历史记录），确认新池子跑通后再整块删掉。
+        private static readonly List<DungeonBuffDef> LegacyUnused = new List<DungeonBuffDef>
         {
             // ══════════════════════════════════════════════════════
             //   第十周任务书里点名的效果，必须全部存在：
@@ -238,6 +248,132 @@ namespace EchoPuzzle.Dungeon
                 manaCostMul = 1.25f,
             },
         };
+
+        // ══════════════════════════════════════════════════════════════
+        //   第十一周：六色插件池
+        // ══════════════════════════════════════════════════════════════
+        //
+        //   白 / 绿 / 蓝 / 红 = 纯数值插件（伤害 / 射速 / 蓝耗 各一条）
+        //   紫 / 橙         = 五个机制插件（爆炸弹头 / 霰弹 / 连发 / 跳弹 / 穿甲）
+        //
+        //   ★ 紫插件额外 ×1.5 蓝耗，橙插件没有额外蓝耗 —— 这是"想要机制就得付出"。
+        //   ★ 同效果跨颜色的等级合并靠 effectId（"aoe" / "shotgun" / "volley" / "bounce" / "pierce"），
+        //     所以不管紫的还是橙的爆炸弹头，装两个就是 Lv2。
+        //   ★ maxStacks = 该颜色"同效果最多能拿几个"：
+        //       白 3、绿 2、蓝 1、紫 1、橙 2、红 无限（用 99 表示）
+        public static readonly List<DungeonBuffDef> All = BuildColoredPool();
+
+        private static List<DungeonBuffDef> BuildColoredPool()
+        {
+            var list = new List<DungeonBuffDef>(32);
+
+            // ---- 纯数值：白 / 绿 / 蓝 / 红 ----
+            AddStatTrio(list, PluginColor.White,  "白", 1.5f,  1.8f,  0.6f,  3);
+            AddStatTrio(list, PluginColor.Green,  "绿", 1.75f, 2.25f, 0.45f, 2);
+            AddStatTrio(list, PluginColor.Blue,   "蓝", 2.25f, 3.24f, 0.36f, 1);
+            AddStatTrio(list, PluginColor.Red,    "红", 0.9f,  0.8f,  1.5f,  99);
+
+            // ---- 机制：紫（蓝耗 ×1.5）/ 橙（不额外加蓝耗）----
+            AddMechanicSet(list, PluginColor.Purple, "紫", 1.5f, 1);
+            AddMechanicSet(list, PluginColor.Orange, "橙", 1f,   2);
+
+            return list;
+        }
+
+        /// <summary>一条颜色的「伤害 / 射速 / 蓝耗」三件套。</summary>
+        private static void AddStatTrio(List<DungeonBuffDef> list, PluginColor color, string prefix,
+                                        float dmg, float rate, float mana, int max)
+        {
+            string tag = $"{(int)color}";
+
+            list.Add(new DungeonBuffDef
+            {
+                id = tag + "-dmg", effectId = "dmg", color = color,
+                name = prefix + "·伤害",
+                desc = $"伤害 ×{dmg:0.##}\n（{SlotRules.NameOf(color)}插件）",
+                weight = 10f, maxStacks = max,
+                damageMul = dmg,
+            });
+
+            list.Add(new DungeonBuffDef
+            {
+                id = tag + "-rate", effectId = "rate", color = color,
+                name = prefix + "·射速",
+                desc = $"射速 ×{rate:0.##}\n（{SlotRules.NameOf(color)}插件）",
+                weight = 10f, maxStacks = max,
+                fireRateMul = rate,
+            });
+
+            list.Add(new DungeonBuffDef
+            {
+                id = tag + "-mana", effectId = "mana", color = color,
+                name = prefix + "·蓝耗",
+                desc = $"蓝耗 ×{mana:0.##}\n（{SlotRules.NameOf(color)}插件）",
+                weight = 10f, maxStacks = max,
+                manaCostMul = mana,
+            });
+        }
+
+        /// <summary>一条颜色的五个机制插件。</summary>
+        private static void AddMechanicSet(List<DungeonBuffDef> list, PluginColor color, string prefix,
+                                           float manaMul, int max)
+        {
+            string tag  = $"{(int)color}";
+            string cost = manaMul > 1.0001f ? $"\n蓝耗 ×{manaMul:0.##}" : "";
+            string kind = SlotRules.NameOf(color);
+
+            list.Add(new DungeonBuffDef
+            {
+                id = tag + "-aoe", effectId = "aoe", color = color,
+                name = prefix + "·爆炸弹头",
+                desc = "子弹命中怪物或墙壁时爆炸，\n范围内的其它怪物受到伤害。" + cost,
+                weight = 10f, maxStacks = max,
+                manaCostMul = manaMul,
+            });
+
+            list.Add(new DungeonBuffDef
+            {
+                id = tag + "-shotgun", effectId = "shotgun", color = color,
+                name = prefix + "·霰弹改造",
+                desc = "开火时额外发射 2 颗子弹，呈扇形铺开。\n再装一份，扇形更宽。" + cost,
+                weight = 10f, maxStacks = max,
+                extraPellets = 2,
+                manaCostMul  = manaMul,
+                bulletSpreadMul = 1.15f,
+            });
+
+            list.Add(new DungeonBuffDef
+            {
+                id = tag + "-volley", effectId = "volley", color = color,
+                name = prefix + "·连发装置",
+                desc = "每次单击额外开火一轮。" + cost,
+                weight = 10f, maxStacks = max,
+                extraVolleys = 1,
+                manaCostMul  = manaMul,
+            });
+
+            list.Add(new DungeonBuffDef
+            {
+                id = tag + "-bounce", effectId = "bounce", color = color,
+                name = prefix + "·跳弹",
+                desc = "子弹撞墙后反弹，每份多弹一次。" + cost,
+                weight = 10f, maxStacks = max,
+                bounceAdd   = 1,
+                manaCostMul = manaMul,
+            });
+
+            list.Add(new DungeonBuffDef
+            {
+                id = tag + "-pierce", effectId = "pierce", color = color,
+                name = prefix + "·穿甲弹",
+                desc = "子弹命中敌人时穿过它继续飞，每份多穿一只。" + cost,
+                weight = 10f, maxStacks = max,
+                pierceAdd   = 1,
+                manaCostMul = manaMul,
+            });
+
+            _ = kind;
+        }
 
         /// <summary>
         /// 抽 <paramref name="count"/> 条**互不相同**的 buff。

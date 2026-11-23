@@ -105,6 +105,33 @@ namespace EchoPuzzle.Dungeon
         /// <summary>兼容旧调用：等级（没拥有 = 0）。</summary>
         public int StacksOf(DungeonBuffDef def) => LevelOf(def);
 
+        /// <summary>
+        /// 某个**机制效果**在当前模板里的等级（跨颜色合并，第十一周）。
+        ///
+        /// ★ 任务书：「不管这两个爆炸弹头插件的颜色是什么，都能得到爆炸弹头 Lv2」
+        ///   所以这里按 def.effectId 汇总，而不是按 id。
+        /// </summary>
+        public int MechanicLevel(string effectId)
+        {
+            if (string.IsNullOrEmpty(effectId)) return 0;
+
+            List<BuffInstance> active = SlotsOf(ActiveTemplate);
+            if (active == null) return 0;
+
+            int lv = 0;
+
+            for (int i = 0; i < active.Count; i++)
+            {
+                BuffInstance inst = active[i];
+                if (inst == null || inst.def == null) continue;
+                if (inst.def.effectId != effectId) continue;
+
+                lv += Mathf.Max(1, inst.level);
+            }
+
+            return lv;
+        }
+
         /// <summary>取某种 buff 的实例（没有返回 null）。</summary>
         public BuffInstance Find(DungeonBuffDef def)
         {

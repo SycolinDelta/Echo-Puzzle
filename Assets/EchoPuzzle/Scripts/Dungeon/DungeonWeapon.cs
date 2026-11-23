@@ -350,15 +350,8 @@ namespace EchoPuzzle.Dungeon
                 var b = DungeonBuffState.Instance;
                 if (b == null) return 0;
 
-                // 按 id 在 buff 池里找到 "shotgun" 这条定义，再问它叠了几级
-                var pool = DungeonBuffPool.All;
-                for (int i = 0; i < pool.Count; i++)
-                {
-                    DungeonBuffDef d = pool[i];
-                    if (d != null && d.id == "shotgun") return Mathf.Max(0, b.StacksOf(d));
-                }
-
-                return 0;
+                // ★ 第十一周：紫 / 橙的霰弹要**合并等级**，所以按 effectId 汇总
+                return Mathf.Max(0, b.MechanicLevel("shotgun"));
             }
         }
 
@@ -1142,14 +1135,8 @@ namespace EchoPuzzle.Dungeon
                 var b = DungeonBuffState.Instance;
                 if (b == null) return 0;
 
-                var pool = DungeonBuffPool.All;
-                for (int i = 0; i < pool.Count; i++)
-                {
-                    DungeonBuffDef d = pool[i];
-                    if (d != null && d.id == "aoe") return Mathf.Max(0, b.StacksOf(d));
-                }
-
-                return 0;
+                // ★ 第十一周：紫 / 橙的爆炸弹头合并等级（按 effectId 汇总）
+                return Mathf.Max(0, b.MechanicLevel("aoe"));
             }
         }
 

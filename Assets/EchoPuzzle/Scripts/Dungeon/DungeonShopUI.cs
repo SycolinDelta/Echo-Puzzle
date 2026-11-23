@@ -410,7 +410,8 @@ namespace EchoPuzzle.Dungeon
                          "橙·" + d.name,
                          d.desc.Replace("\n", " "),
                          orangePrice, canBuy,
-                         () => BuyOrange(d));
+                         () => BuyOrange(d),
+                         "本次已购买");
 
                 y += rowH + 10f;
             }
@@ -439,30 +440,44 @@ namespace EchoPuzzle.Dungeon
             DrawItem(new Rect(x, y, rowW, rowH),
                      "模板升级",
                      $"{tierNow}级 → 下一级　（全局限 2 次，剩余 {left} 次）",
-                     upgradePrice, canBuy, BuyUpgrade);
+                     upgradePrice, canBuy, BuyUpgrade,
+                     m_UpgradeBought ? "本店已升级" : "升级次数已用完");
         }
 
-        private void DrawItem(Rect r, string name, string desc, int price, bool canBuy, System.Action buy)
+        /// <summary>
+        /// 画一行商品。
+        ///
+        /// ★ 价格**永远显示**（任务书要求明码标价）。
+        ///   买不了的原因（满血 / 满蓝 / 已购买 / 买不起）写在描述后面，
+        ///   不能因为"现在不能买"就把价格藏成 "—"，那样玩家会以为没定价。
+        /// </summary>
+        private void DrawItem(Rect r, string name, string desc, int price, bool canBuy, System.Action buy,
+                              string unavailableText = "已满")
         {
             bool clicked = GUI.Button(r, GUIContent.none, m_ClickArea);
             DrawBorder(r);
 
-            int goldNow = DungeonCurrency.Instance != null ? DungeonCurrency.Instance.Gold : 0;
-            bool affordable = goldNow >= price && canBuy;
+            int  goldNow    = DungeonCurrency.Instance != null ? DungeonCurrency.Instance.Gold : 0;
+            bool affordable = goldNow >= price;
+            bool canClick   = canBuy && affordable;
 
             Color prev = GUI.color;
-            if (!affordable) GUI.color = new Color(1f, 1f, 1f, 0.4f);
+
+            // 买不起 -> 整行变暗（价格也跟着暗，但依然看得见）
+            if (!affordable) GUI.color = new Color(1f, 1f, 1f, 0.45f);
 
             GUI.Label(new Rect(r.x + 20f, r.y + 10f, r.width - 260f, 34f), name, m_ItemStyle);
-            GUI.Label(new Rect(r.x + 20f, r.y + 44f, r.width - 260f, 30f), desc, m_DescStyle);
 
+            string descText = canBuy ? desc : desc + "　（" + unavailableText + "）";
+            GUI.Label(new Rect(r.x + 20f, r.y + 44f, r.width - 260f, 30f), descText, m_DescStyle);
+
+            // 价格：始终显示
             GUI.Label(new Rect(r.xMax - 232f, r.y + 24f, 200f, 40f),
-                      canBuy ? $"{price} 金币" : "—",
-                      canBuy ? m_PriceStyle : m_DescStyle);
+                      $"{price} 金币", m_PriceStyle);
 
             GUI.color = prev;
 
-            if (clicked && affordable) buy?.Invoke();
+            if (clicked && canClick) buy?.Invoke();
         }
 
         private void DrawBorder(Rect r)

@@ -315,7 +315,54 @@ namespace EchoPuzzle.Dungeon
         ///       连发 ×1（+0.5）+ 高爆 ×1.75  ->  (1 + 0.5) × 1.75 = 2.625
         /// </summary>
         public float EffectiveManaCost
-            => Round3(Mathf.Max(0f, (manaCost + ManaCostAdd) * Mul(s => s.ManaCostMul)));
+            => Round3(Mathf.Max(0f, (manaCost + ManaCostAdd)
+                                     * Mul(s => s.ManaCostMul)
+                                     * OverflowManaCostMul));
+
+        // ------------------------------------------------------------------ 射速封顶（第十一周）
+
+        /// <summary>
+        /// 射速倍率上限。任务书："为了避免性能开销过高，限制玩家的射速最多 ×8"。
+        /// </summary>
+        public const float MaxFireRateMul = 8f;
+
+        /// <summary>buff 叠出来的**原始**射速倍率（可能超过 8）。</summary>
+        public float RawFireRateMul => Mul(s => s.FireRateMul);
+
+        /// <summary>真正生效的射速倍率（封顶 ×8，保留三位小数）。</summary>
+        public float EffectiveFireRateMul => Round3(Mathf.Min(MaxFireRateMul, RawFireRateMul));
+
+        /// <summary>
+        /// 溢出射速转成的**伤害倍率**：y = x / 8（x = 原始射速倍率）。
+        ///
+        /// ★ 例：13.122 倍 -> 13.122 / 8 = 1.64025 -> 保留三位 = 1.640
+        /// </summary>
+        public float OverflowDamageMul
+        {
+            get
+            {
+                float x = RawFireRateMul;
+                if (x <= MaxFireRateMul) return 1f;
+
+                return Round3(x / MaxFireRateMul);
+            }
+        }
+
+        /// <summary>
+        /// 溢出射速转成的**蓝耗倍率**：z = y² / 1.2（y = 上面的伤害倍率）。
+        ///
+        /// ★ 例：y = 1.640 -> 1.640² / 1.2 = 2.6896 / 1.2 = 2.24133 -> 2.241
+        /// </summary>
+        public float OverflowManaCostMul
+        {
+            get
+            {
+                float y = OverflowDamageMul;
+                if (y <= 1f) return 1f;
+
+                return Round3(y * y / 1.2f);
+            }
+        }
 
         /// <summary>
         /// 当前「霰弹改造」等级对应的扇形总角度（度）。
@@ -423,7 +470,7 @@ namespace EchoPuzzle.Dungeon
         /// ★★ 保留三位小数 ★★
         /// </summary>
         public float EffectiveDamage
-            => Round3(Mathf.Max(0.001f, damage * Mul(s => s.DamageMul)));
+            => Round3(Mathf.Max(0.001f, damage * Mul(s => s.DamageMul) * OverflowDamageMul));
 
         /// <summary>
         /// 含 buff 后的击杀回蓝。
@@ -437,7 +484,7 @@ namespace EchoPuzzle.Dungeon
 
         /// <summary>含 buff 后的射击间隔（秒）。</summary>
         public float EffectiveFireInterval
-            => Mathf.Max(0.02f, fireInterval / Mathf.Max(0.1f, Mul(s => s.FireRateMul)));
+            => Mathf.Max(0.02f, fireInterval / Mathf.Max(0.1f, EffectiveFireRateMul));
 
         /// <summary>含 buff 后的每秒射速（发/秒），给 HUD 显示用。</summary>
         public float EffectiveShotsPerSecond => 1f / Mathf.Max(0.02f, EffectiveFireInterval);

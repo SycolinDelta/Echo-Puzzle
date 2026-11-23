@@ -85,18 +85,30 @@ namespace EchoPuzzle.Dungeon
 
             if (m_State != null)
             {
-                // ★ 现在是"一种 buff 一个实例 + 等级"，不需要再去重
+                // ★ 第十一周：一份插件一个实例，所以按"种类"汇总成 "紫·爆炸弹头 ×2"
+                var seenIds = new List<string>();
+
                 for (int i = 0; i < m_State.Owned.Count; i++)
                 {
                     BuffInstance inst = m_State.Owned[i];
                     if (inst == null || inst.def == null) continue;
+                    if (seenIds.Contains(inst.def.id)) continue;
 
-                    // 插槽里没装（不在当前模板）的插件标一下，免得玩家以为没生效
-                    bool equipped = m_State.CountInTemplate(m_State.ActiveTemplate, inst) > 0;
+                    seenIds.Add(inst.def.id);
 
-                    m_Lines.Add(equipped
-                        ? $"{inst.Name} Lv{inst.level}"
-                        : $"{inst.Name} Lv{inst.level}（未装备）");
+                    int total = 0, equipped = 0;
+
+                    for (int k = 0; k < m_State.Owned.Count; k++)
+                    {
+                        BuffInstance o = m_State.Owned[k];
+                        if (o == null || o.def == null || o.def.id != inst.def.id) continue;
+
+                        total++;
+                        if (m_State.IsEquipped(m_State.ActiveTemplate, o)) equipped++;
+                    }
+
+                    string suffix = equipped > 0 ? "" : "（未装备）";
+                    m_Lines.Add($"{inst.def.name} ×{total}{suffix}");
                 }
             }
 

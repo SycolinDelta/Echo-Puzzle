@@ -4,55 +4,57 @@ using UnityEngine;
 namespace EchoPuzzle.Dungeon
 {
     /// <summary>
-    /// 【地牢模式】玩家拥有的插件（buff）与两个武器模板的插槽。
+    /// 【地牢模式】玩家拥有的插件、两个武器模板的六色插槽、以及合成后的最终数值。
     ///
-    /// ── 模型（第十周任务 5）──────────────────────────────────
-    ///   · 每种 buff 在背包里**只有一个实例**，重复获得 = **升级**（最高 maxStacks 级）
-    ///   · 两个武器模板各有一套插槽，按 E 切换；一个实例可以同时装在两个模板上
-    ///   · **只有插进当前模板槽里的插件才生效**（没插就是背包里的摆件）
-    ///   · 每推进 2 层，每个模板 +1 个插槽（初始 3 个）
+    /// ── 模型（第十一周）────────────────────────────────────
+    ///   · **一份插件 = 一个实例**。拿到 3 个白色伤害插件就是 3 个实例、占 3 个白槽。
+    ///   · 槽位有颜色，插件必须插进同色槽（<see cref="SlotRules"/> 算容量）。
+    ///   · 两个模板各有一套槽；一个实例可以同时装在两个模板上。
+    ///   · 只有插进**当前模板**槽里的插件才生效。
+    ///   · 武器模板等级（白→橙）由两个模板共享，通关第 5/10 层各升一次，商店还能升 2 次。
     ///
-    /// ── 等级怎么作用到数值 ──────────────────────────────────
-    ///   乘区：pow(值, 等级)。例：蓝耗 ×0.75 的 Lv2 = 0.5625
-    ///   加法：值 × 等级。  例：爆炸半径 +3.5 的 Lv2 = +7
+    /// ── 数值怎么合成 ────────────────────────────────────────
+    ///   乘区：每个实例按 pow(值, 等级) 连乘（等级现在恒为 1，保留字段方便以后扩展）
+    ///   加法：每个实例按 值 × 等级 累加
+    ///   机制等级（爆炸弹头 / 霰弹）按 effectId 跨颜色汇总，见 <see cref="MechanicLevel"/>
     /// </summary>
     [AddComponentMenu("Echo Puzzle/Dungeon/Dungeon Buff State")]
     public sealed class DungeonBuffState : MonoBehaviour
     {
         public static DungeonBuffState Instance { get; private set; }
 
-        /// <summary>数值 / 插槽变化时触发。</summary>
+        /// <summary>数值 / 插槽 / 模板等级变化时触发。</summary>
         public event System.Action Changed;
+
+        public const int TemplateCount = 2;
 
         // ------------------------------------------------------------------ 背包
 
-        /// <summary>拥有的插件（每种 buff 最多一个实例）。</summary>
-        private readonly List<BuffInstance> m_Instances = new List<BuffInstance>(16);
+        private readonly List<BuffInstance> m_Instances = new List<BuffInstance>(24);
 
-        /// <summary>拥有的插件（按获得顺序）。</summary>
+        /// <summary>拥有的插件实例（按获得顺序，同名会有多个）。</summary>
         public IReadOnlyList<BuffInstance> Owned => m_Instances;
 
-        /// <summary>拥有几种插件。</summary>
         public int Count => m_Instances.Count;
 
         // ------------------------------------------------------------------ 插槽
 
-        public const int BaseSlots = 3;
-        public const int FloorsPerExtraSlot = 2;
-        public const int TemplateCount = 2;
-
-        /// <summary>每个模板当前的插槽数：初始 3 个，每推进 2 层 +1。</summary>
-        public static int SlotCount
-            => BaseSlots + Mathf.Max(0, StageIndex - 1) / FloorsPerExtraSlot;
+        /// <summary>每个模板的六色已装列表：[模板][颜色] -> 实例列表（不含空位）。</summary>
+        private readonly List<BuffInstance>[,] m_Slots =
+            new List<BuffInstance>[TemplateCount, SlotRules.ColorCount];
 
         /// <summary>当前使用的模板（0 / 1），按 E 切换。</summary>
         public int ActiveTemplate { get; private set; }
 
-        private readonly List<BuffInstance>[] m_Slots =
-        {
-            new List<BuffInstance>(8),
-            new List<BuffInstance>(8),
-        };
+        /// <summary>武器模板等级（两个模板共享）。</summary>
+        public TemplateTier Tier { get; private set; } = TemplateTier.White;
+
+        /// <summary>商店里还能升几次（初始 2 次，任务书：剩下两次升级只能在商店刷出）。</summary>
+        public int ShopUpgradesLeft { get; private set; } = 2;
+
+        // 缓存的容量 / 占用（每次装备变化时重算，避免 UI 每帧重算）
+        private readonly int[,] m_Caps = new int[TemplateCount, SlotRules.ColorCount];
+        private readonly int[,] m_Used = new int[TemplateCount, SlotRules.ColorCount];
 
         // ------------------------------------------------------------------ 合成后的数值
 
@@ -64,12 +66,13 @@ namespace EchoPuzzle.Dungeon
         public float BulletWidthMul { get; private set; } = 1f;
         public float BulletSpreadMul { get; private set; } = 1f;
 
-        public int   MaxManaAdd { get; private set; }
+        public int   MaxManaAdd   { get; private set; }
         public int   ExtraPellets { get; private set; }
+        public float AoeRadius    { get; private set; }
         public int   ExtraVolleys { get; private set; }
-        public int   BounceCount { get; private set; }
-        public int   PierceCount { get; private set; }
-        public float ManaCostAdd { get; private set; }
+        public int   BounceCount  { get; private set; }
+        public int   PierceCount  { get; private set; }
+        public float ManaCostAdd  { get; private set; }
 
         private int m_AppliedMaxBonus;
 
@@ -80,6 +83,11 @@ namespace EchoPuzzle.Dungeon
             if (Instance != null && Instance != this) { Destroy(this); return; }
 
             Instance = this;
+
+            for (int t = 0; t < TemplateCount; t++)
+                for (int c = 0; c < SlotRules.ColorCount; c++)
+                    m_Slots[t, c] = new List<BuffInstance>(8);
+
             Recompute();
         }
 
@@ -90,49 +98,23 @@ namespace EchoPuzzle.Dungeon
 
         // ------------------------------------------------------------------ 背包 API
 
-        /// <summary>某种 buff 的等级（没拥有 = 0）。</summary>
-        public int LevelOf(DungeonBuffDef def)
+        /// <summary>某种插件拥有几份（同名同色）。</summary>
+        public int StacksOf(DungeonBuffDef def)
         {
             if (def == null) return 0;
 
+            int n = 0;
             for (int i = 0; i < m_Instances.Count; i++)
                 if (m_Instances[i] != null && m_Instances[i].def != null && m_Instances[i].def.id == def.id)
-                    return m_Instances[i].level;
+                    n++;
 
-            return 0;
+            return n;
         }
 
-        /// <summary>兼容旧调用：等级（没拥有 = 0）。</summary>
-        public int StacksOf(DungeonBuffDef def) => LevelOf(def);
+        /// <summary>兼容旧名：拥有份数。</summary>
+        public int LevelOf(DungeonBuffDef def) => StacksOf(def);
 
-        /// <summary>
-        /// 某个**机制效果**在当前模板里的等级（跨颜色合并，第十一周）。
-        ///
-        /// ★ 任务书：「不管这两个爆炸弹头插件的颜色是什么，都能得到爆炸弹头 Lv2」
-        ///   所以这里按 def.effectId 汇总，而不是按 id。
-        /// </summary>
-        public int MechanicLevel(string effectId)
-        {
-            if (string.IsNullOrEmpty(effectId)) return 0;
-
-            List<BuffInstance> active = SlotsOf(ActiveTemplate);
-            if (active == null) return 0;
-
-            int lv = 0;
-
-            for (int i = 0; i < active.Count; i++)
-            {
-                BuffInstance inst = active[i];
-                if (inst == null || inst.def == null) continue;
-                if (inst.def.effectId != effectId) continue;
-
-                lv += Mathf.Max(1, inst.level);
-            }
-
-            return lv;
-        }
-
-        /// <summary>取某种 buff 的实例（没有返回 null）。</summary>
+        /// <summary>取第一份该插件的实例（可能已经被装上了）。</summary>
         public BuffInstance Find(DungeonBuffDef def)
         {
             if (def == null) return null;
@@ -144,111 +126,146 @@ namespace EchoPuzzle.Dungeon
             return null;
         }
 
-        /// <summary>
-        /// 获得一条 buff：没有就新建 Lv1，已有就**升一级**（封顶 maxStacks）。
-        /// </summary>
+        /// <summary>获得**一份**新插件；能装就自动装进当前模板，装不下就留在背包。</summary>
         public void Add(DungeonBuffDef def)
         {
             if (def == null) return;
 
-            BuffInstance inst = Find(def);
+            var inst = new BuffInstance(def, 1);
+            m_Instances.Add(inst);
 
-            if (inst == null)
-            {
-                inst = new BuffInstance(def, 1);
-                m_Instances.Add(inst);
-
-                // 新插件自动装进当前模板的第一个空槽
-                int free = FirstFreeSlot(ActiveTemplate);
-                if (free >= 0) SetSlotInternal(ActiveTemplate, free, inst);
-            }
-            else if (!inst.IsMax)
-            {
-                inst.level++;
-            }
+            // 自动入槽（放不下就算了，玩家按 R 自己整理）
+            TryEquip(ActiveTemplate, inst);
 
             Recompute();
         }
 
-        /// <summary>清空背包与插槽（重开一局用）。</summary>
+        /// <summary>清空背包、插槽、模板等级（重开一局）。</summary>
         public void Clear()
         {
-            if (m_Instances.Count == 0 && UsedSlots(0) == 0 && UsedSlots(1) == 0) return;
-
             m_Instances.Clear();
 
-            for (int t = 0; t < m_Slots.Length; t++) m_Slots[t].Clear();
+            for (int t = 0; t < TemplateCount; t++)
+                for (int c = 0; c < SlotRules.ColorCount; c++)
+                    m_Slots[t, c].Clear();
 
-            ActiveTemplate = 0;
+            ActiveTemplate   = 0;
+            Tier             = TemplateTier.White;
+            ShopUpgradesLeft = 2;
+
             Recompute();
         }
 
-        // ------------------------------------------------------------------ 插槽 API
+        // ------------------------------------------------------------------ 模板等级
 
-        /// <summary>取某个模板某个槽里的插件（越界 / 空槽返回 null）。</summary>
-        public BuffInstance SlotAt(int template, int index)
+        /// <summary>模板升一级（白→绿→蓝→紫→橙），两个模板一起升。</summary>
+        public bool UpgradeTier()
         {
-            List<BuffInstance> list = SlotsOf(template);
-            if (list == null || index < 0 || index >= list.Count) return null;
-            return list[index];
-        }
+            if (Tier >= TemplateTier.Orange) return false;
 
-        public int UsedSlots(int template)
-        {
-            List<BuffInstance> list = SlotsOf(template);
-            if (list == null) return 0;
-
-            int n = 0;
-            int limit = Mathf.Min(list.Count, SlotCount);
-            for (int i = 0; i < limit; i++) if (list[i] != null) n++;
-            return n;
-        }
-
-        public int FirstFreeSlot(int template)
-        {
-            List<BuffInstance> list = SlotsOf(template);
-            if (list == null) return -1;
-
-            for (int i = 0; i < SlotCount; i++)
-            {
-                if (i >= list.Count) return i;
-                if (list[i] == null) return i;
-            }
-
-            return -1;
-        }
-
-        /// <summary>
-        /// 把插件放进某个槽。
-        /// <returns>放不下返回 false（同一模板里已经装过这一个插件实例了）</returns>
-        /// </summary>
-        public bool SetSlot(int template, int index, BuffInstance inst)
-        {
-            if (index < 0 || index >= SlotCount) return false;
-            if (SlotAt(template, index) == inst) return true;
-
-            // ★ 一个模板里，同一个插件实例只能占一个槽（不会出现"一份插件插三格"）
-            if (inst != null && CountInTemplate(template, inst) > 0) return false;
-
-            SetSlotInternal(template, index, inst);
+            Tier = (TemplateTier)((int)Tier + 1);
             Recompute();
             return true;
         }
 
-        public void ClearSlot(int template, int index) => SetSlot(template, index, null);
-
-        /// <summary>这个模板里装了几个该实例（只可能是 0 或 1）。</summary>
-        public int CountInTemplate(int template, BuffInstance inst)
+        /// <summary>商店里花钱升级（次数有限）。</summary>
+        public bool UpgradeTierFromShop()
         {
-            if (inst == null) return 0;
+            if (ShopUpgradesLeft <= 0) return false;
+            if (!UpgradeTier()) return false;
 
-            List<BuffInstance> list = SlotsOf(template);
-            if (list == null) return 0;
+            ShopUpgradesLeft--;
+            return true;
+        }
 
-            for (int i = 0; i < list.Count; i++)
-                if (list[i] == inst) return 1;
+        // ------------------------------------------------------------------ 插槽查询
 
-            return 0;
+        /// <summary>某模板某颜色的容量（已扣掉挤占）。</summary>
+        public int CapOf(int template, PluginColor color)
+            => m_Caps[Mathf.Clamp(template, 0, TemplateCount - 1), (int)color];
+
+        /// <summary>某模板某颜色已装几个。</summary>
+        public int UsedOf(int template, PluginColor color)
+            => m_Used[Mathf.Clamp(template, 0, TemplateCount - 1), (int)color];
+
+        /// <summary>某模板某颜色已装列表（只读，按装入顺序）。</summary>
+        public IReadOnlyList<BuffInstance> SlotsOf(int template, PluginColor color)
+            => m_Slots[Mathf.Clamp(template, 0, TemplateCount - 1), (int)color];
+
+        /// <summary>这个实例是否装在该模板里。</summary>
+        public bool IsEquipped(int template, BuffInstance inst)
+        {
+            if (inst == null) return false;
+
+            var list = m_Slots[Mathf.Clamp(template, 0, TemplateCount - 1), (int)inst.def.color];
+            return list.Contains(inst);
+        }
+
+        /// <summary>
+        /// 能不能把这个实例装进该模板。
+        /// <paramref name="reason"/> 会带回失败原因（给界面显示）。
+        /// </summary>
+        public bool CanEquip(int template, BuffInstance inst, out string reason)
+        {
+            reason = null;
+
+            if (inst == null || inst.def == null) { reason = "插件无效"; return false; }
+            if (IsEquipped(template, inst)) { reason = "它已经装在这个模板里了"; return false; }
+
+            template = Mathf.Clamp(template, 0, TemplateCount - 1);
+
+            // 假设装上之后的颜色分布，再算一遍容量
+            int[] counts = new int[SlotRules.ColorCount];
+            for (int c = 0; c < SlotRules.ColorCount; c++)
+                counts[c] = m_Slots[template, c].Count;
+
+            counts[(int)inst.def.color]++;
+
+            int[] caps = new int[SlotRules.ColorCount];
+            SlotRules.ComputeCaps(Tier, StageIndex, counts, caps);
+
+            for (int c = 0; c < SlotRules.ColorCount; c++)
+            {
+                if (counts[c] <= caps[c]) continue;
+
+                var color = (PluginColor)c;
+
+                // 说清楚为什么装不下
+                if (color == inst.def.color)
+                    reason = $"{SlotRules.NameOf(color)}槽已满（{caps[c]}/{caps[c]}）";
+                else
+                    reason = $"{SlotRules.NameOf(color)}槽会被挤爆，先拆掉一些{SlotRules.NameOf(color)}插件";
+
+                return false;
+            }
+
+            return true;
+        }
+
+        /// <summary>尝试装上；装不下返回 false，原因见 <paramref name="reason"/>。</summary>
+        public bool TryEquip(int template, BuffInstance inst) => TryEquip(template, inst, out _);
+
+        public bool TryEquip(int template, BuffInstance inst, out string reason)
+        {
+            if (!CanEquip(template, inst, out reason)) return false;
+
+            template = Mathf.Clamp(template, 0, TemplateCount - 1);
+            m_Slots[template, (int)inst.def.color].Add(inst);
+
+            Recompute();
+            return true;
+        }
+
+        /// <summary>从某颜色槽里拆下第 index 个。</summary>
+        public void Unequip(int template, PluginColor color, int index)
+        {
+            template = Mathf.Clamp(template, 0, TemplateCount - 1);
+
+            var list = m_Slots[template, (int)color];
+            if (index < 0 || index >= list.Count) return;
+
+            list.RemoveAt(index);
+            Recompute();
         }
 
         /// <summary>切换当前使用的模板（按 E）。</summary>
@@ -261,76 +278,111 @@ namespace EchoPuzzle.Dungeon
             Recompute();
         }
 
-        private List<BuffInstance> SlotsOf(int template)
+        // ------------------------------------------------------------------ 机制等级
+
+        /// <summary>
+        /// 某个**机制效果**在当前模板里的等级（跨颜色合并）。
+        /// 例：紫爆炸弹头 + 橙爆炸弹头 = "aoe" Lv2。
+        /// </summary>
+        public int MechanicLevel(string effectId)
         {
-            if (m_Slots == null || m_Slots.Length == 0) return null;
-            return m_Slots[Mathf.Clamp(template, 0, m_Slots.Length - 1)];
-        }
+            if (string.IsNullOrEmpty(effectId)) return 0;
 
-        private void SetSlotInternal(int template, int index, BuffInstance inst)
-        {
-            List<BuffInstance> list = SlotsOf(template);
-            if (list == null || index < 0) return;
+            int lv = 0;
 
-            while (list.Count <= index) list.Add(null);
+            var all = m_Slots[ActiveTemplate, 0];
+            for (int c = 0; c < SlotRules.ColorCount; c++)
+            {
+                var list = m_Slots[ActiveTemplate, c];
 
-            list[index] = inst;
+                for (int i = 0; i < list.Count; i++)
+                {
+                    BuffInstance inst = list[i];
+                    if (inst == null || inst.def == null) continue;
+                    if (inst.def.effectId != effectId) continue;
+
+                    lv += Mathf.Max(1, inst.level);
+                }
+            }
+
+            _ = all;
+            return lv;
         }
 
         // ------------------------------------------------------------------ 计算
 
-        /// <summary>只累加**当前模板已插进槽里**的插件。</summary>
+        /// <summary>刷新容量 / 占用 / 数值。</summary>
         public void Recompute()
         {
+            // ---- 1) 容量与占用 ----
+            for (int t = 0; t < TemplateCount; t++)
+            {
+                int[] counts = new int[SlotRules.ColorCount];
+                for (int c = 0; c < SlotRules.ColorCount; c++)
+                {
+                    counts[c]  = m_Slots[t, c].Count;
+                    m_Used[t, c] = counts[c];
+                }
+
+                int[] caps = new int[SlotRules.ColorCount];
+                SlotRules.ComputeCaps(Tier, StageIndex, counts, caps);
+
+                for (int c = 0; c < SlotRules.ColorCount; c++) m_Caps[t, c] = caps[c];
+            }
+
+            // ---- 2) 数值合成（只算当前模板）----
             float dmg = 1f, rate = 1f, mana = 1f, kill = 1f;
             float speed = 1f, width = 1f, spread = 1f;
             int   maxAdd = 0, pellets = 0, volleys = 0, bounces = 0, pierce = 0;
-            float manaAdd = 0f;
+            float aoe = 0f, manaAdd = 0f;
 
-            List<BuffInstance> active = SlotsOf(ActiveTemplate);
-
-            for (int i = 0; active != null && i < active.Count; i++)
+            for (int c = 0; c < SlotRules.ColorCount; c++)
             {
-                BuffInstance inst = active[i];
-                if (inst == null || inst.def == null) continue;
+                var list = m_Slots[ActiveTemplate, c];
 
-                DungeonBuffDef b = inst.def;
-                int lv = Mathf.Max(1, inst.level);
+                for (int i = 0; i < list.Count; i++)
+                {
+                    BuffInstance inst = list[i];
+                    if (inst == null || inst.def == null) continue;
 
-                // 乘区：按等级取幂
-                dmg    *= Mathf.Pow(b.damageMul, lv);
-                rate   *= Mathf.Pow(b.fireRateMul, lv);
-                mana   *= Mathf.Pow(b.manaCostMul, lv);
-                kill   *= Mathf.Pow(b.killManaMul, lv);
-                speed  *= Mathf.Pow(b.bulletSpeedMul, lv);
-                width  *= Mathf.Pow(b.bulletWidthMul, lv);
-                spread *= Mathf.Pow(b.bulletSpreadMul, lv);
+                    DungeonBuffDef b = inst.def;
+                    int lv = Mathf.Max(1, inst.level);
 
-                // 加法：按等级乘
-                maxAdd  += b.maxManaAdd * lv;
-                pellets += b.extraPellets * lv;
-                // ★ aoeRadiusAdd 已删除（爆炸半径改由 aoeRadiusByLevel 等级表决定）
-                volleys += b.extraVolleys * lv;
-                bounces += b.bounceAdd * lv;
-                pierce  += b.pierceAdd * lv;
-                manaAdd += b.manaCostAdd * lv;
+                    dmg    *= Mathf.Pow(b.damageMul, lv);
+                    rate   *= Mathf.Pow(b.fireRateMul, lv);
+                    mana   *= Mathf.Pow(b.manaCostMul, lv);
+                    kill   *= Mathf.Pow(b.killManaMul, lv);
+                    speed  *= Mathf.Pow(b.bulletSpeedMul, lv);
+                    width  *= Mathf.Pow(b.bulletWidthMul, lv);
+                    spread *= Mathf.Pow(b.bulletSpreadMul, lv);
+
+                    maxAdd  += b.maxManaAdd * lv;
+                    pellets += b.extraPellets * lv;
+                    volleys += b.extraVolleys * lv;
+                    bounces += b.bounceAdd * lv;
+                    pierce  += b.pierceAdd * lv;
+                    manaAdd += b.manaCostAdd * lv;
+                }
             }
 
-            DamageMul      = Round3(dmg);
-            FireRateMul    = Round3(rate);
-            ManaCostMul    = Round3(mana);
-            KillManaMul    = Round3(kill);
-            BulletSpeedMul = Round3(speed);
-            BulletWidthMul = Round3(width);
+            DamageMul       = Round3(dmg);
+            FireRateMul     = Round3(rate);
+            ManaCostMul     = Round3(mana);
+            KillManaMul     = Round3(kill);
+            BulletSpeedMul  = Round3(speed);
+            BulletWidthMul  = Round3(width);
             BulletSpreadMul = Round3(spread);
 
             MaxManaAdd   = maxAdd;
             ExtraPellets = Mathf.Max(0, pellets);
-            // ★ AoeRadius 已删除（爆炸半径改由 aoeRadiusByLevel 决定）
             ExtraVolleys = Mathf.Max(0, volleys);
             BounceCount  = Mathf.Max(0, bounces);
             PierceCount  = Mathf.Max(0, pierce);
             ManaCostAdd  = Round3(Mathf.Max(0f, manaAdd));
+
+            // ★ 爆炸半径不再由"每层 +N"累加：武器按机制等级查表（aoeRadiusByLevel）
+            AoeRadius = 0f;
+            _ = aoe;
 
             ApplyMaxMana(maxAdd);
 
@@ -348,9 +400,11 @@ namespace EchoPuzzle.Dungeon
 
         public static int StageIndex => s_StageIndex;
 
-        /// <summary>设置当前层号（1 起），并重算 StageScale 与插槽上限。</summary>
+        /// <summary>设置当前层号（1 起）。第 5/10 层会顺带升级模板。</summary>
         public static void SetStage(int stageIndex)
         {
+            int prev = s_StageIndex;
+
             s_StageIndex = Mathf.Max(1, stageIndex);
 
             float s = 1f;
@@ -359,12 +413,15 @@ namespace EchoPuzzle.Dungeon
             s_StageScale = Round3(s);
 
             DungeonBuffState inst = Instance;
-            if (inst != null) inst.RaiseChanged();
-        }
+            if (inst == null) return;
 
-        private void RaiseChanged()
-        {
-            Changed?.Invoke();
+            // ★ 任务书：通关第 5、10 层时模板升一级（两个模板一起升）
+            if (prev != s_StageIndex)
+            {
+                if (s_StageIndex == 5 || s_StageIndex == 10) inst.UpgradeTier();
+            }
+
+            inst.Recompute();
         }
 
         /// <summary>保留三位小数。</summary>

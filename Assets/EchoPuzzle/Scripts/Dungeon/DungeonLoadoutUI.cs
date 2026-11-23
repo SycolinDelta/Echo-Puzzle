@@ -4,24 +4,22 @@ using UnityEngine;
 namespace EchoPuzzle.Dungeon
 {
     /// <summary>
-    /// 【地牢模式】插件装备界面（第十周任务 5）。
+    /// 【地牢模式】插件装配界面（第十一周版）。
     ///
-    /// ── 规则 ────────────────────────────────────────────────
-    ///   · 每个 buff 就是一个"插件"，插进插槽才生效（见 DungeonBuffState.Recompute）
-    ///   · 两个武器模板各有一套插槽，按 **E** 切换当前模板
-    ///   · 一个插件**可以同时装在两个模板上**（不互斥）
-    ///   · 每个模板初始 3 格，每推进 2 层 +1 格
+    /// ── 操作 ────────────────────────────────────────────────
+    ///   · **R** 开 / 关本界面
+    ///   · **E** 切换武器模板（**战斗中也能按**，不用先开界面）
+    ///   · 点背包里的插件 → 选中；再点同色的空格 → 装上
+    ///   · 点已占用的格子 → 拆下
     ///
-    /// ── 操作（按 R 打开）────────────────────────────────────
-    ///   · 左键点背包里的插件 -> 选中
-    ///   · 再点某个槽 -> 装进去（原来那格的退回背包）
-    ///   · 直接点已占用的槽 -> 卸下
-    ///   · 按 E 切换模板（A / B），按 R 或 Esc 关闭
-    ///
-    /// ── 为什么没做"拖拽" ────────────────────────────────────
-    ///   任务书写的是"拖动到插槽"。IMGUI 里做拖拽要自己处理 drag 状态、
-    ///   悬停高亮、放下判定，容易和现有的光标锁定打架；这版先用
-    ///   "点选 + 点槽"达到同样的效果，手感更稳，之后要做拖拽也只是换个交互层。
+    /// ── 版式 ────────────────────────────────────────────────
+    ///   左边背包，右边两个模板；每个模板按颜色分行：
+    ///     白 1/3   [■][ ][ ]
+    ///     绿 0/3   [ ][ ][ ]
+    ///     蓝 0/0
+    ///     紫 1/1   [■]
+    ///     橙 0/0
+    ///     红 0/1   [ ]      ← 红槽必须填满，没填会标红提示
     /// </summary>
     [AddComponentMenu("Echo Puzzle/Dungeon/Dungeon Loadout UI")]
     public sealed class DungeonLoadoutUI : MonoBehaviour
@@ -29,36 +27,35 @@ namespace EchoPuzzle.Dungeon
         public static DungeonLoadoutUI Instance { get; private set; }
 
         [Header("按键")]
-        public KeyCode toggleKey     = KeyCode.R;
-        public KeyCode switchKey     = KeyCode.E;
+        public KeyCode toggleKey = KeyCode.R;
+        public KeyCode switchKey = KeyCode.E;
 
         [Header("版式（1080 高度基准的像素）")]
-        public float panelWidth  = 1180f;
-        public float panelHeight = 720f;
-        public float titleSize   = 34f;
-        public float itemSize    = 20f;
-        public float slotSize    = 96f;
-        public float slotGap     = 10f;
+        public float panelWidth  = 1500f;
+        public float panelHeight = 900f;
+        public float titleSize   = 46f;
+        public float labelSize   = 26f;
+        public float smallSize   = 20f;
+        public float slotSize    = 62f;
+        public float slotGap     = 8f;
 
         [Header("颜色")]
         public Color textColor      = Color.white;
         public Color dimColor       = new Color(1f, 1f, 1f, 0.5f);
-        public Color activeColor    = new Color(0.35f, 0.75f, 1f, 1f);
-        public Color backdropColor  = new Color(0f, 0f, 0f, 0.9f);
-        public Color cardColor      = new Color(1f, 1f, 1f, 0.05f);
-        public Color cardHoverColor = new Color(1f, 1f, 1f, 0.14f);
+        public Color activeColor    = new Color(0.4f, 0.85f, 1f, 1f);
+        public Color backdropColor  = new Color(0f, 0f, 0f, 0.96f);
+        public Color cardColor      = new Color(1f, 1f, 1f, 0.06f);
+        public Color cardHoverColor = new Color(1f, 1f, 1f, 0.16f);
         public Color borderColor    = new Color(1f, 1f, 1f, 0.22f);
-        public Color equippedColor  = new Color(0.4f, 0.9f, 0.6f, 0.16f);
+        public Color warnColor      = new Color(1f, 0.4f, 0.4f, 1f);
 
         private const float RefHeight = 1080f;
 
-        /// <summary>界面是否开着。</summary>
         public bool IsOpen { get; private set; }
 
-        /// <summary>当前在背包里被选中的插件实例（点槽时用）。</summary>
         private BuffInstance m_Selected;
+        private float        m_PrevTimeScale = 1f;
 
-        private float     m_PrevTimeScale = 1f;
         private Texture2D m_Pixel;
         private Texture2D m_CardTex;
         private Texture2D m_CardHoverTex;
@@ -67,6 +64,9 @@ namespace EchoPuzzle.Dungeon
         private GUIStyle m_LabelStyle;
         private GUIStyle m_SmallStyle;
         private GUIStyle m_ClickArea;
+
+        private string m_Hint = "";
+        private float  m_HintUntil;
 
         // ------------------------------------------------------------------ 生命周期
 
@@ -94,26 +94,23 @@ namespace EchoPuzzle.Dungeon
         {
             if (!GameUI.IsDungeonMode) { if (IsOpen) Close(); return; }
 
-            // 只在游戏进行中能开
-            if (!IsOpen && GameUI.Current != GameState.Playing) return;
+            var st = DungeonBuffState.Instance;
 
-            if (Input.GetKeyDown(toggleKey)) { if (IsOpen) Close(); else Open(); }
+            // ★ 任务书：战斗中也能按 E 切模板（不用先开 R）
+            if (st != null && GameUI.Current == GameState.Playing && Input.GetKeyDown(switchKey))
+            {
+                st.SetActiveTemplate((st.ActiveTemplate + 1) % DungeonBuffState.TemplateCount);
+                ShowHint($"已切换到模板 {(st.ActiveTemplate == 0 ? "A" : "B")}");
+            }
 
-            if (!IsOpen) return;
+            if (!IsOpen)
+            {
+                if (GameUI.Current == GameState.Playing && Input.GetKeyDown(toggleKey)) Open();
+                return;
+            }
 
-            // 切模板
-            if (Input.GetKeyDown(switchKey)) SwitchTemplate();
+            if (Input.GetKeyDown(toggleKey) || Input.GetKeyDown(KeyCode.Escape)) Close();
 
-            if (Input.GetKeyDown(KeyCode.Escape)) Close();
-
-            // 兜底：切窗口 / 别的系统可能把光标解锁成可见。
-            //   ★ 这个界面也不能出现系统指针（短剑图标就是指针）。
-            // ★ 解锁（None）但保持**不可见** ★
-            //
-            //   ★ 必须解锁：Locked 时 Input.mousePosition 被钉在屏幕中心，
-            //     短剑动不了，GUI.Button 也点不到。
-            //   ★ visible = false：屏幕上看不到系统指针，
-            //     玩家眼里那个短剑图标就是指针。
             if (Cursor.lockState != CursorLockMode.None || Cursor.visible)
             {
                 Cursor.lockState = CursorLockMode.None;
@@ -131,11 +128,10 @@ namespace EchoPuzzle.Dungeon
             m_PrevTimeScale = Time.timeScale;
             Time.timeScale  = 0f;
 
-            // ★ 系统指针保持隐藏；把短剑图标挪到屏幕中心当指针用
-            if (DungeonWeapon.Instance != null) DungeonWeapon.Instance.RecenterCursor();
+            Cursor.lockState = CursorLockMode.None;
+            Cursor.visible   = false;
         }
 
-        /// <summary>关闭界面（重开 / 换场景时也给 GameUI 调）。</summary>
         public void Close()
         {
             if (!IsOpen) return;
@@ -145,16 +141,14 @@ namespace EchoPuzzle.Dungeon
 
             Time.timeScale = m_PrevTimeScale <= 0.0001f ? 1f : m_PrevTimeScale;
 
-            Cursor.lockState = CursorLockMode.None;
+            Cursor.lockState = CursorLockMode.Locked;
             Cursor.visible   = false;
         }
 
-        private static void SwitchTemplate()
+        private void ShowHint(string text)
         {
-            var st = DungeonBuffState.Instance;
-            if (st == null) return;
-
-            st.SetActiveTemplate((st.ActiveTemplate + 1) % DungeonBuffState.TemplateCount);
+            m_Hint      = text ?? "";
+            m_HintUntil = Time.unscaledTime + 2.5f;
         }
 
         // ------------------------------------------------------------------ 绘制
@@ -168,12 +162,6 @@ namespace EchoPuzzle.Dungeon
 
             EnsureStyles();
 
-            // ★ 压在其它 IMGUI 之上：HUD（DPS / 蓝耗 / 蓝量）是别的脚本画的，
-            //   OnGUI 的先后顺序不固定，不设 depth 的话它就会盖在面板上挡住视野。
-            //   Unity 里 depth **越小越靠上**。
-            int prevDepth = GUI.depth;
-            GUI.depth = -1000;
-
             float scale = Screen.height / RefHeight;
             Matrix4x4 saved = GUI.matrix;
             GUI.matrix = Matrix4x4.TRS(Vector3.zero, Quaternion.identity,
@@ -181,10 +169,9 @@ namespace EchoPuzzle.Dungeon
 
             float w = Screen.width / scale;
 
-            // 背景
             Color prev = GUI.color;
             GUI.color = backdropColor;
-            GUI.DrawTexture(new Rect(0f, 0f, w, RefHeight * 1.5f), m_Pixel);
+            GUI.DrawTexture(new Rect(0f, 0f, w, RefHeight * 1.6f), m_Pixel);
             GUI.color = prev;
 
             float px = (w - panelWidth) * 0.5f;
@@ -192,93 +179,118 @@ namespace EchoPuzzle.Dungeon
             var panel = new Rect(px, py, panelWidth, panelHeight);
             DrawBorder(panel);
 
-            GUI.Label(new Rect(panel.x, panel.y + 14f, panel.width, 50f),
-                      "插件装配", m_TitleStyle);
+            GUI.Label(new Rect(panel.x, panel.y + 16f, panel.width, 60f), "插件装配", m_TitleStyle);
 
-            GUI.Label(new Rect(panel.x + 28f, panel.y + 64f, panel.width - 56f, 30f),
-                      "点背包里的插件，再点插槽装入；点已占用的槽卸下。E 切换模板，R 关闭。",
-                      m_SmallStyle);
+            GUI.Label(new Rect(panel.x + 24f, panel.y + 74f, panel.width - 48f, 30f),
+                      $"模板等级：{SlotRules.NameOf(st.Tier)}级　·　商店剩余升级：{st.ShopUpgradesLeft}/2　" +
+                      $"·　R 关闭　·　E 切换模板（战斗中也可以）", m_SmallStyle);
 
-            // ---- 左：背包（已获得但没装进**当前**模板的）----
-            float listX = panel.x + 28f;
-            float listY = panel.y + 108f;
-            float listW = 330f;
+            // 左：背包
+            float bagW = 420f;
+            var bag = new Rect(panel.x + 24f, panel.y + 120f, bagW, panel.height - 180f);
+            DrawBorder(bag);
+            GUI.Label(new Rect(bag.x + 14f, bag.y + 8f, bag.width - 28f, 30f), "背包", m_LabelStyle);
+            DrawBag(st, new Rect(bag.x + 12f, bag.y + 44f, bag.width - 24f, bag.height - 56f));
 
-            GUI.Label(new Rect(listX, listY, listW, 28f), "背包", m_LabelStyle);
-            listY += 34f;
+            // 右：两个模板
+            float rightX = bag.xMax + 24f;
+            float rightW = panel.xMax - 24f - rightX;
+            float rightH = (panel.height - 150f) * 0.5f;
 
-            DrawInventory(st, new Rect(listX, listY, listW, panel.height - 190f));
+            DrawTemplate(st, 0, new Rect(rightX, panel.y + 120f, rightW, rightH - 10f));
+            DrawTemplate(st, 1, new Rect(rightX, panel.y + 120f + rightH, rightW, rightH - 10f));
 
-            // ---- 右：两个模板 ----
-            float tplX = panel.x + 390f;
-            float tplW = panel.width - 390f - 28f;
-            float tplY = panel.y + 108f;
-
-            for (int t = 0; t < DungeonBuffState.TemplateCount; t++)
-            {
-                DrawTemplate(st, t, new Rect(tplX, tplY, tplW, 210f));
-                tplY += 226f;
-            }
-
-            // ---- 底部提示 ----
+            // 底部提示
             if (!string.IsNullOrEmpty(m_Hint) && Time.unscaledTime < m_HintUntil)
             {
-                GUI.Label(new Rect(panel.x + 28f, panel.yMax - 44f, panel.width - 56f, 32f),
+                GUI.Label(new Rect(panel.x + 24f, panel.yMax - 40f, panel.width - 48f, 30f),
                           m_Hint, m_SmallStyle);
             }
 
             GUI.matrix = saved;
-            GUI.depth  = prevDepth;
         }
 
-        private void DrawInventory(DungeonBuffState st, Rect area)
+        private void DrawBag(DungeonBuffState st, Rect area)
         {
-            float y = area.y;
+            // 按 def 分组（同色同名算一份一组），显示拥有数和装在哪
+            var defs  = new List<DungeonBuffDef>();
+            var counts = new List<int>();
 
-            if (st.Owned.Count == 0)
-            {
-                GUI.Label(new Rect(area.x, y, area.width, 28f), "（还没有插件）", m_SmallStyle);
-                return;
-            }
-
-            // ★ 一种 buff 只有一个实例（等级制），所以这里不用再去重
             for (int i = 0; i < st.Owned.Count; i++)
             {
                 BuffInstance inst = st.Owned[i];
                 if (inst == null || inst.def == null) continue;
 
-                // ★ 可选择性**不看当前模板**。
-                //   之前是"装在 A 里就不能选"，结果想把同一个插件也装到 B，
-                //   必须先按 E 切到 B 才能选 —— 非常反直觉。
-                //   真正"同一模板不能占两格"的限制交给 SetSlot 判定。
-                bool inA = st.CountInTemplate(0, inst) > 0;
-                bool inB = st.CountInTemplate(1, inst) > 0;
+                int idx = defs.FindIndex(x => x != null && x.id == inst.def.id);
+                if (idx >= 0) { counts[idx]++; continue; }
 
-                bool usable   = !(inA && inB);      // 两个模板都装了就没必要再选
-                bool selected = m_Selected == inst;
+                defs.Add(inst.def);
+                counts.Add(1);
+            }
 
-                var row = new Rect(area.x, y, area.width, 40f);
+            float y = area.y;
+
+            if (defs.Count == 0)
+            {
+                GUI.Label(new Rect(area.x, y, area.width, 28f), "（还没有插件）", m_SmallStyle);
+                return;
+            }
+
+            for (int i = 0; i < defs.Count; i++)
+            {
+                DungeonBuffDef d = defs[i];
+
+                // 找到一份"还没装进当前模板"的实例用于选中
+                BuffInstance pick = null;
+                for (int k = 0; k < st.Owned.Count; k++)
+                {
+                    BuffInstance inst = st.Owned[k];
+                    if (inst == null || inst.def == null || inst.def.id != d.id) continue;
+                    if (st.IsEquipped(st.ActiveTemplate, inst)) continue;
+
+                    pick = inst;
+                    break;
+                }
+
+                int inA = 0, inB = 0;
+                for (int k = 0; k < st.Owned.Count; k++)
+                {
+                    BuffInstance inst = st.Owned[k];
+                    if (inst == null || inst.def == null || inst.def.id != d.id) continue;
+
+                    if (st.IsEquipped(0, inst)) inA++;
+                    if (st.IsEquipped(1, inst)) inB++;
+                }
+
+                bool usable   = pick != null;
+                bool selected = m_Selected != null && m_Selected.def != null && m_Selected.def.id == d.id;
+
+                var row = new Rect(area.x, y, area.width, 44f);
 
                 if (GUI.Button(row, GUIContent.none, m_ClickArea) && usable)
-                    m_Selected = selected ? null : inst;
+                {
+                    m_Selected = selected ? null : pick;
+                }
 
                 DrawBorder(row);
 
+                // 左侧颜色条
                 Color prev = GUI.color;
+                GUI.color = SlotRules.UiColor(d.color);
+                GUI.DrawTexture(new Rect(row.x + 2f, row.y + 2f, 6f, row.height - 4f), m_Pixel);
+
                 if (selected) GUI.color = activeColor;
-                else if (!usable) GUI.color = new Color(1f, 1f, 1f, 0.4f);
+                else if (!usable) GUI.color = new Color(1f, 1f, 1f, 0.45f);
 
-                string lv = $"Lv{inst.level}" + (inst.IsMax ? "·满" : "");
-
-                // 标出已经装在哪个模板里（A/B），方便一眼看出还剩哪个模板能装
-                string badge = (inA ? "[A]" : "") + (inB ? "[B]" : "");
-
-                GUI.Label(new Rect(row.x + 12f, row.y + 6f, row.width - 24f, 28f),
-                          $"{inst.Name} {lv} {badge}", m_LabelStyle);
+                string badge = (inA > 0 ? "[A]" : "") + (inB > 0 ? "[B]" : "");
+                GUI.Label(new Rect(row.x + 16f, row.y + 8f, row.width - 24f, 30f),
+                          $"{d.name} ×{counts[i]} {badge}", m_LabelStyle);
 
                 GUI.color = prev;
 
-                y += 46f;
+                y += 50f;
+
+                if (y > area.yMax - 44f) break;
             }
         }
 
@@ -286,94 +298,109 @@ namespace EchoPuzzle.Dungeon
         {
             bool active = st.ActiveTemplate == template;
 
-            // 标题：模板 A / B（当前模板高亮）
+            DrawBorder(area);
+
             Color prev = GUI.color;
             if (active) GUI.color = activeColor;
 
-            int used = st.UsedSlots(template);
-            int total = DungeonBuffState.SlotCount;
-
-            GUI.Label(new Rect(area.x, area.y, area.width, 32f),
-                      $"模板 {(template == 0 ? "A" : "B")}　{used}/{total}" +
+            GUI.Label(new Rect(area.x + 16f, area.y + 8f, area.width - 32f, 34f),
+                      $"模板 {(template == 0 ? "A" : "B")}　{SlotRules.NameOf(st.Tier)}级" +
                       (active ? "　（当前使用）" : "　（按 E 切换）"),
                       m_LabelStyle);
 
             GUI.color = prev;
 
-            // 插槽
-            float x = area.x;
-            float y = area.y + 40f;
+            float y = area.y + 50f;
 
-            for (int i = 0; i < total; i++)
+            for (int c = 0; c < SlotRules.ColorCount; c++)
             {
-                var slot = new Rect(x, y, slotSize, slotSize);
+                var color = (PluginColor)c;
 
-                if (GUI.Button(slot, GUIContent.none, m_ClickArea))
-                    OnSlotClicked(st, template, i);
+                int cap  = st.CapOf(template, color);
+                int used = st.UsedOf(template, color);
+                var list = st.SlotsOf(template, color);
 
-                // 装了东西的槽换个底色
-                if (st.SlotAt(template, i) != null)
+                // 红槽没填满 -> 标红提醒
+                bool warn = color == PluginColor.Red && used < cap;
+
+                Color cprev = GUI.color;
+                GUI.color = warn ? warnColor : SlotRules.UiColor(color);
+
+                GUI.Label(new Rect(area.x + 16f, y + 6f, 120f, 30f),
+                          $"{SlotRules.NameOf(color)} {used}/{cap}", m_SmallStyle);
+
+                GUI.color = cprev;
+
+                float x = area.x + 130f;
+
+                for (int i = 0; i < cap; i++)
                 {
+                    var box = new Rect(x, y, slotSize, slotSize);
+
+                    BuffInstance equipped = (i < list.Count) ? list[i] : null;
+
+                    bool clicked = GUI.Button(box, GUIContent.none, m_ClickArea);
+
+                    // 底色：装了东西 = 该颜色半透明
                     Color p2 = GUI.color;
-                    GUI.color = equippedColor;
-                    GUI.DrawTexture(slot, m_Pixel);
+                    GUI.color = equipped != null
+                        ? new Color(SlotRules.UiColor(color).r, SlotRules.UiColor(color).g, SlotRules.UiColor(color).b, 0.22f)
+                        : cardColor;
+                    GUI.DrawTexture(box, m_Pixel);
                     GUI.color = p2;
+
+                    DrawBorder(box);
+
+                    if (equipped != null)
+                    {
+                        GUI.Label(new Rect(box.x + 3f, box.y + 4f, box.width - 6f, box.height - 8f),
+                                  ShortName(equipped), m_SmallStyle);
+                    }
+
+                    if (!clicked) { x += slotSize + slotGap; continue; }
+
+                    // ---- 点击处理 ----
+                    if (equipped != null)
+                    {
+                        st.Unequip(template, color, i);
+                        ShowHint($"拆下 {equipped.Name}");
+                    }
+                    else if (m_Selected == null)
+                    {
+                        ShowHint("先在左边点一个插件");
+                    }
+                    else if (m_Selected.def.color != color)
+                    {
+                        ShowHint($"{m_Selected.Name} 只能插进 {SlotRules.NameOf(m_Selected.def.color)}槽");
+                    }
+                    else if (st.TryEquip(template, m_Selected, out string reason))
+                    {
+                        m_Selected = null;
+                        ShowHint("");
+                    }
+                    else
+                    {
+                        ShowHint(reason ?? "装不下");
+                    }
+
+                    x += slotSize + slotGap;
                 }
 
-                DrawBorder(slot);
-
-                BuffInstance d = st.SlotAt(template, i);
-
-                GUI.Label(new Rect(slot.x + 4f, slot.y + 6f, slot.width - 8f, 24f),
-                          (i + 1).ToString(), m_SmallStyle);
-
-                if (d != null)
-                {
-                    GUI.Label(new Rect(slot.x + 4f, slot.y + 34f, slot.width - 8f, slot.height - 38f),
-                              $"{d.Name}\nLv{d.level}", m_SmallStyle);
-                }
-
-                x += slotSize + slotGap;
+                y += slotSize + 12f;
             }
         }
 
-        private void OnSlotClicked(DungeonBuffState st, int template, int index)
+        private static string ShortName(BuffInstance inst)
         {
-            BuffInstance equipped = st.SlotAt(template, index);
+            if (inst == null || inst.def == null) return "";
 
-            // 槽里有东西 -> 卸下
-            if (equipped != null)
-            {
-                st.ClearSlot(template, index);
-                m_Selected = equipped;      // 顺手选中，方便放到别的槽
-                return;
-            }
+            string n = inst.def.name;
 
-            // 空槽 + 背包里选了东西 -> 装上
-            if (m_Selected != null)
-            {
-                // 同一模板里一个插件只能占一个槽（SetSlot 会拒绝重复）
-                if (st.SetSlot(template, index, m_Selected))
-                {
-                    m_Selected = null;
-                    ShowHint("");
-                }
-                else
-                {
-                    ShowHint($"「{m_Selected.Name}」已经装在这个模板里了，换个槽或换个模板");
-                }
-            }
-        }
+            // "紫·爆炸弹头" -> 去掉颜色前缀，格子里只留效果名
+            int dot = n.IndexOf('·');
+            if (dot >= 0 && dot + 1 < n.Length) n = n.Substring(dot + 1);
 
-        /// <summary>底部的一行提示（操作失败时说明原因）。</summary>
-        private string m_Hint = "";
-
-        private float m_HintUntil;
-
-        private void ShowHint(string text)
-        {
-            m_Hint      = text ?? "";
-            m_HintUntil = Time.unscaledTime + 2.5f;
+            return n;
         }
 
         // ------------------------------------------------------------------ 样式
@@ -407,14 +434,14 @@ namespace EchoPuzzle.Dungeon
 
             m_LabelStyle = new GUIStyle(GUI.skin.label)
             {
-                font = f, fontSize = Mathf.RoundToInt(itemSize),
+                font = f, fontSize = Mathf.RoundToInt(labelSize),
                 alignment = TextAnchor.MiddleLeft,
             };
             m_LabelStyle.normal.textColor = textColor;
 
             m_SmallStyle = new GUIStyle(GUI.skin.label)
             {
-                font = f, fontSize = Mathf.RoundToInt(itemSize * 0.8f),
+                font = f, fontSize = Mathf.RoundToInt(smallSize),
                 alignment = TextAnchor.MiddleLeft, wordWrap = true,
             };
             m_SmallStyle.normal.textColor = dimColor;

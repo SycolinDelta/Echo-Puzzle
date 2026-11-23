@@ -439,7 +439,7 @@ namespace EchoPuzzle.Dungeon
         /// </summary>
         private void Reroll()
         {
-            if (!IsOpen || m_IsStarterOpen || m_IsBluePick) return;
+            if (!IsOpen || m_IsBluePick) return;
 
             if (rerollLimit >= 0 && m_RerollsUsed >= rerollLimit) return;
 
@@ -659,8 +659,13 @@ namespace EchoPuzzle.Dungeon
 
             // ---- 底部：刷新按钮 + 提示 ----
             //
-            // ★ 开局自选不显示刷新：它列的是"全部可选"，刷新没有意义。
-            if (!m_IsStarterOpen && DungeonCurrency.Instance != null)
+            // ★ 开局三选一**也**给刷新按钮。
+            //
+            //   以前不给是因为"开局列的是全部可选 buff"，刷新没意义；
+            //   现在开局也是随机抽 3 张，玩家同样会想重抽，所以放开。
+            //   不会被白嫖：开局金币是 0（DungeonCurrency.startGold 默认 0），
+            //   按钮显示为灰、按 F 也不扣钱不换卡。
+            if (DungeonCurrency.Instance != null)
             {
                 float btnW = 320f;
                 float btnH = 46f;

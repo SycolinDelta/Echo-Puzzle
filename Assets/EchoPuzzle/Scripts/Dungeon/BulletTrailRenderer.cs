@@ -12,7 +12,7 @@ namespace EchoPuzzle.Dungeon
     ///     · new GameObject("DungeonBullet") + DungeonBullet 组件
     ///     · new GameObject("BulletTrailMesh") + MeshFilter + MeshRenderer
     ///     · new Mesh() + 4 个大数组（约 107 KB）
-    ///   射速 4 发/秒 -> 每秒约 430 KB 托管堆分配 + 每发一个独立 draw call。
+    ///   射速 2 发/秒（fireInterval = 0.5）-> 每秒约 215 KB 托管堆分配 + 每发一个独立 draw call。
     ///
     ///   现在：
     ///     · 每发子弹只是一个 <see cref="Shot"/>（纯数据，无 GameObject）
@@ -507,7 +507,7 @@ namespace EchoPuzzle.Dungeon
         /// 范围伤害：以命中点为圆心，把半径内的**其它**怪物也打一遍（第十周任务 4）。
         ///
         /// ★ 主目标已经在外面按全额伤害处理过了，这里排除它，避免一枪打两次。
-        /// ★ 溅射伤害取主伤害的 60% —— 全额的话"爆炸弹头"会直接取代单体输出。
+        /// ★ 溅射伤害取主伤害的 80%（代码里是 s.damage * 0.8f）—— 全额的话"爆炸弹头"会直接取代单体输出。
         /// </summary>
         private static void ApplyAoeDamage(PuzzleMonster primary, Vector3 center, Shot s)
         {

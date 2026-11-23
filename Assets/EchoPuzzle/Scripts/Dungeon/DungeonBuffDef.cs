@@ -384,36 +384,98 @@ namespace EchoPuzzle.Dungeon
             var result = new List<DungeonBuffDef>(count);
             if (count <= 0) return result;
 
-            // 候选：过滤掉叠满的
-            var candidates = new List<DungeonBuffDef>(All.Count);
+            // ★ 第十一周：三选一只出白 / 绿 / 紫，颜色概率 6 : 2 : 1
+            //   蓝插件是"模板升到紫色时三选一"，橙插件只从商店出，红色也只能商店买
+            var byColor = new List<DungeonBuffDef>[3];
+            for (int c = 0; c < 3; c++) byColor[c] = new List<DungeonBuffDef>();
+
             for (int i = 0; i < All.Count; i++)
             {
                 DungeonBuffDef d = All[i];
                 if (d == null) continue;
+
+                int ci = ColorIndexForPick(d.color);
+                if (ci < 0) continue;
+
+                // 达到"这个颜色同效果最多几个"就不再出现
                 if (state != null && state.StacksOf(d) >= d.maxStacks) continue;
-                candidates.Add(d);
+
+                byColor[ci].Add(d);
             }
 
-            for (int n = 0; n < count && candidates.Count > 0; n++)
+            for (int n = 0; n < count; n++)
             {
-                // 加权随机挑一条，挑完移出候选，保证三张不重复
                 float total = 0f;
-                for (int i = 0; i < candidates.Count; i++) total += Mathf.Max(0.01f, candidates[i].weight);
+                for (int c = 0; c < 3; c++)
+                    if (byColor[c].Count > 0) total += PickWeights[c];
+
+                if (total <= 0f) break;      // 三色都抽干了
 
                 float pick = Random.value * total;
-                int chosen = candidates.Count - 1;
+                int chosenColor = -1;
 
-                for (int i = 0; i < candidates.Count; i++)
+                for (int c = 0; c < 3; c++)
                 {
-                    pick -= Mathf.Max(0.01f, candidates[i].weight);
-                    if (pick <= 0f) { chosen = i; break; }
+                    if (byColor[c].Count == 0) continue;
+
+                    pick -= PickWeights[c];
+                    if (pick <= 0f) { chosenColor = c; break; }
                 }
 
-                result.Add(candidates[chosen]);
-                candidates.RemoveAt(chosen);
+                // 浮点误差兜底
+                if (chosenColor < 0)
+                    for (int c = 2; c >= 0; c--)
+                        if (byColor[c].Count > 0) { chosenColor = c; break; }
+
+                var list = byColor[chosenColor];
+
+                int idx = WeightedIndex(list);
+                result.Add(list[idx]);
+                list.RemoveAt(idx);          // 保证三张不重复
             }
 
             return result;
+        }
+
+        /// <summary>三选一的颜色权重：白 6、绿 2、紫 1。</summary>
+        public static readonly float[] PickWeights = { 6f, 2f, 1f };
+
+        private static int ColorIndexForPick(PluginColor c)
+        {
+            switch (c)
+            {
+                case PluginColor.White:  return 0;
+                case PluginColor.Green:  return 1;
+                case PluginColor.Purple: return 2;
+                default:                 return -1;      // 蓝 / 橙 / 红 不进三选一
+            }
+        }
+
+        private static int WeightedIndex(List<DungeonBuffDef> list)
+        {
+            float total = 0f;
+            for (int i = 0; i < list.Count; i++) total += Mathf.Max(0.01f, list[i].weight);
+
+            float pick = Random.value * total;
+
+            for (int i = 0; i < list.Count; i++)
+            {
+                pick -= Mathf.Max(0.01f, list[i].weight);
+                if (pick <= 0f) return i;
+            }
+
+            return list.Count - 1;
+        }
+
+        /// <summary>取某个颜色的全部定义（蓝插件三选一、商店橙插件用）。</summary>
+        public static List<DungeonBuffDef> ByColor(PluginColor color)
+        {
+            var list = new List<DungeonBuffDef>(8);
+
+            for (int i = 0; i < All.Count; i++)
+                if (All[i] != null && All[i].color == color) list.Add(All[i]);
+
+            return list;
         }
     }
 }

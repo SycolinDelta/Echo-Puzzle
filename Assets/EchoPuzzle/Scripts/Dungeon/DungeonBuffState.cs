@@ -52,6 +52,15 @@ namespace EchoPuzzle.Dungeon
         /// <summary>商店里还能升几次（初始 2 次，任务书：剩下两次升级只能在商店刷出）。</summary>
         public int ShopUpgradesLeft { get; private set; } = 2;
 
+        /// <summary>
+        /// 模板刚升到紫色，等着弹「蓝插件三选一」。
+        /// 由 <see cref="DungeonBuffSelectUI"/> 读取并调 <see cref="ConsumeBluePick"/> 清掉。
+        /// </summary>
+        public bool PendingBluePick { get; private set; }
+
+        /// <summary>消费掉蓝插件三选一（选完 / 关掉都算）。</summary>
+        public void ConsumeBluePick() => PendingBluePick = false;
+
         // 缓存的容量 / 占用（每次装备变化时重算，避免 UI 每帧重算）
         private readonly int[,] m_Caps = new int[TemplateCount, SlotRules.ColorCount];
         private readonly int[,] m_Used = new int[TemplateCount, SlotRules.ColorCount];
@@ -164,6 +173,10 @@ namespace EchoPuzzle.Dungeon
             if (Tier >= TemplateTier.Orange) return false;
 
             Tier = (TemplateTier)((int)Tier + 1);
+
+            // ★ 任务书：升到紫色时把三个蓝插件一起发，蓝槽只有一个 -> 弹三选一
+            if (Tier == TemplateTier.Purple) PendingBluePick = true;
+
             Recompute();
             return true;
         }

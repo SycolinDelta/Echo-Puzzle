@@ -48,7 +48,7 @@ namespace EchoPuzzle.Dungeon
 
         [Header("刷新（花金币）")]
         [Tooltip("刷新一次三选一花多少金币。0 = 免费（但开局自选永远不能刷新）")]
-        [Min(0)] public int rerollCost = 3;
+        [Min(0)] public int rerollCost = 10;
 
         [Tooltip("每次选卡最多能刷新几次。-1 = 不限")]
         public int rerollLimit = -1;
@@ -120,6 +120,9 @@ namespace EchoPuzzle.Dungeon
 
         /// <summary>当前这次界面是"开局自选"（关掉时不去通知地图）。</summary>
         private bool m_IsStarterOpen;
+
+        /// <summary>当前这一轮是"蓝插件三选一"（模板刚升到紫色）。</summary>
+        private bool m_IsBluePick;
 
         /// <summary>本次界面已经刷新过几次。</summary>
         private int m_RerollsUsed;
@@ -259,6 +262,20 @@ namespace EchoPuzzle.Dungeon
                 }
             }
 
+            // ---- 蓝插件三选一（第十一周）----
+            //
+            //   任务书：模板升到紫色时，三个蓝色插件一起发放，
+            //   但蓝槽只有一个，所以弹一次三选一让玩家挑一个。
+            if (!IsOpen && !m_StarterPending)
+            {
+                var st = DungeonBuffState.Instance;
+
+                if (st != null && st.PendingBluePick && GameUI.Current == GameState.Playing)
+                {
+                    OpenBluePick();
+                }
+            }
+
             // ---- 倒计时：等地图淡出完成后弹 ----
             //
             // ★★ 新时序：淡出全黑 -> 弹 buff -> 选完 -> 建地图 -> 淡入 ★★
@@ -347,6 +364,42 @@ namespace EchoPuzzle.Dungeon
             Cursor.visible   = false;
         }
 
+        /// <summary>
+        /// 蓝插件三选一：模板刚升到紫色时弹一次。
+        ///
+        /// ★ 三个蓝色插件一起发，但蓝槽只有一个 —— 选一个，另外两个就没了。
+        /// ★ 不能被刷新（没有"再抽三个"的说法）。
+        /// </summary>
+        private void OpenBluePick()
+        {
+            if (IsOpen) return;
+            if (GameUI.Current != GameState.Playing) return;
+
+            m_Options.Clear();
+            m_Options.AddRange(DungeonBuffPool.ByColor(PluginColor.Blue));
+
+            // 已经拿满蓝插件（理论上不会）就不再弹
+            var st = DungeonBuffState.Instance;
+            if (st != null) m_Options.RemoveAll(d => d == null || st.StacksOf(d) >= d.maxStacks);
+
+            if (m_Options.Count == 0)
+            {
+                if (st != null) st.ConsumeBluePick();
+                return;
+            }
+
+            IsOpen        = true;
+            m_IsStarterOpen = false;
+            m_IsBluePick    = true;
+            m_RerollsUsed   = 0;
+
+            m_PrevTimeScale = Time.timeScale;
+            Time.timeScale  = 0f;
+
+            Cursor.lockState = CursorLockMode.None;
+            Cursor.visible   = false;
+        }
+
         private void Open()
         {
             if (IsOpen) return;
@@ -386,7 +439,7 @@ namespace EchoPuzzle.Dungeon
         /// </summary>
         private void Reroll()
         {
-            if (!IsOpen || m_IsStarterOpen) return;
+            if (!IsOpen || m_IsStarterOpen || m_IsBluePick) return;
 
             if (rerollLimit >= 0 && m_RerollsUsed >= rerollLimit) return;
 
@@ -422,7 +475,20 @@ namespace EchoPuzzle.Dungeon
             //     不通知的话，选完 buff 后地图永远不显示（卡黑屏）。
             m_IsStarterOpen = false;
 
-            NotifyMapBuffDone();
+            // ★ 蓝插件三选一：不管选没选，关掉就算处理过了（否则会一直重开）
+            //   ★ 它是"额外奖励"，不是每层通关那个 buff 流程，
+            //     所以**不能**去通知地图（地图这时并没有在等 buff）。
+            bool wasBluePick = m_IsBluePick;
+
+            if (wasBluePick)
+            {
+                m_IsBluePick = false;
+
+                if (DungeonBuffState.Instance != null)
+                    DungeonBuffState.Instance.ConsumeBluePick();
+            }
+
+            if (!wasBluePick) NotifyMapBuffDone();
             if (!IsOpen) return;
 
             IsOpen = false;

@@ -599,11 +599,28 @@ namespace EchoPuzzle.Dungeon
                 // 1) 整张卡片就是点击区（背景 + 悬停高亮都由这个样式画）
                 bool clicked = GUI.Button(card, GUIContent.none, m_ClickArea);
 
-                // 2) 细边框
-                DrawBorder(card);
+                float pad = Mathf.Max(16f, cardW * 0.07f);
+
+                // ★ 第十一周：卡片按插件颜色上色（白 / 绿 / 紫）
+                //   底色铺一层很淡的同色，边框和右上角的颜色名用纯色 ——
+                //   不抢文字的对比度，但一眼能看出这是哪种插件。
+                Color tint = SlotRules.UiColor(d.color);
+
+                Color pcFill = GUI.color;
+                GUI.color = new Color(tint.r, tint.g, tint.b, 0.12f);
+                GUI.DrawTexture(card, m_Pixel);
+                GUI.color = pcFill;
+
+                // 2) 细边框（用插件颜色）
+                DrawBorder(card, tint);
+
+                Color pcTag = GUI.color;
+                GUI.color = tint;
+                GUI.Label(new Rect(cardX + cardW - pad - 130f, cardY + 20f, 130f, 40f),
+                          SlotRules.NameOf(d.color) + "插件", m_IndexStyle);
+                GUI.color = pcTag;
 
                 // 3) 文字（画在按钮之上）
-                float pad = Mathf.Max(16f, cardW * 0.07f);
 
                 //    左上角的编号，提示"按数字键也能选"
                 GUI.Label(new Rect(cardX + pad, cardY + 20f, 60f, 40f), (i + 1).ToString(), m_IndexStyle);
@@ -676,8 +693,14 @@ namespace EchoPuzzle.Dungeon
         /// <summary>画一圈细边框（四条 1×1 拉伸的矩形）。</summary>
         private void DrawBorder(Rect r)
         {
+            DrawBorder(r, cardBorderColor);
+        }
+
+        /// <summary>用指定颜色画四边框（第十一周：按插件颜色给卡片上色）。</summary>
+        private void DrawBorder(Rect r, Color color)
+        {
             Color prev = GUI.color;
-            GUI.color = cardBorderColor;
+            GUI.color = color;
 
             float t = Mathf.Max(1f, borderThickness);
 

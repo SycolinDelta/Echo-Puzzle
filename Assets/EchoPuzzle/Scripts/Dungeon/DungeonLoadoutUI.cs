@@ -351,7 +351,7 @@ namespace EchoPuzzle.Dungeon
 
             // 行标签和格子里的字都跟着格子尺寸走
             m_RowStyle.fontSize  = Mathf.RoundToInt(Mathf.Clamp(slot * 0.40f, 16f, 34f));
-            m_SlotStyle.fontSize = Mathf.RoundToInt(slot * 0.55f);
+            m_SlotStyle.fontSize = Mathf.RoundToInt(slot * 0.50f);
 
             int perLine = Mathf.Max(1, Mathf.FloorToInt((availW + gap) / (slot + gap)));
 
@@ -371,8 +371,9 @@ namespace EchoPuzzle.Dungeon
                 Color cprev = GUI.color;
                 GUI.color = warn ? warnColor : SlotRules.UiColor(color);
 
-                GUI.Label(new Rect(area.x + padX, y + slot * 0.5f - m_RowStyle.fontSize * 0.5f,
-                                   labelW - 8f, slot * 0.8f),
+                // ★ 行标签的矩形必须和第一行格子**完全同高同起点**，
+                //   否则文字会看起来比格子高/低半格，像是"对不上"。
+                GUI.Label(new Rect(area.x + padX, y, labelW - 8f, slot),
                           $"{SlotRules.NameOf(color)} {used}/{cap}", m_RowStyle);
 
                 GUI.color = cprev;
@@ -560,10 +561,18 @@ namespace EchoPuzzle.Dungeon
             m_SlotStyle.normal.textColor = textColor;
 
             // 颜色行标签（白 1/3）：字号每帧按格子大小重设
+            //
+            // ★ padding / margin 同样清零：skin 的默认内边距会把字推偏，
+            //   行标签就会和它那一行的格子错开半个字。
             m_RowStyle = new GUIStyle(GUI.skin.label)
             {
                 font = f, fontSize = 24,
                 alignment = TextAnchor.MiddleLeft, fontStyle = FontStyle.Bold,
+                padding   = new RectOffset(0, 0, 0, 0),
+                margin    = new RectOffset(0, 0, 0, 0),
+                border    = new RectOffset(0, 0, 0, 0),
+                clipping  = TextClipping.Overflow,
+                wordWrap  = false,
             };
             m_RowStyle.normal.textColor = textColor;
 

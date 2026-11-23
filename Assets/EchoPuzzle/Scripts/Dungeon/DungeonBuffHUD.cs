@@ -119,8 +119,23 @@ namespace EchoPuzzle.Dungeon
             if (w != null)
             {
                 string manaPart = m != null ? $"{m.Current}/{m.Max}" : "?";
-                m_StatsLine = $"伤害 {w.EffectiveDamage}　射速 {w.EffectiveShotsPerSecond:F1}/秒　" +
-                              $"蓝耗 {w.EffectiveManaCost}　回蓝 {w.EffectiveKillMana}　蓝量 {manaPart}";
+
+                // ★ 射速同时显示「倍率」和「每秒几发」：
+                //   只看发/秒会误以为没封顶（封顶是倍率 ×8 = 16 发/秒）。
+                //   倍率达到 8 时标「封顶」，并把溢出的伤害/蓝耗也标出来。
+                float rawRate = w.RawFireRateMul;
+                bool  capped  = rawRate > DungeonWeapon.MaxFireRateMul + 0.001f;
+
+                string rateText = capped
+                    ? $"×{w.EffectiveFireRateMul}(封顶) {w.EffectiveShotsPerSecond:F1}/秒"
+                    : $"×{rawRate:F2} {w.EffectiveShotsPerSecond:F1}/秒";
+
+                string overflowText = capped
+                    ? $"溢出 伤害×{w.OverflowDamageMul} 蓝耗×{w.OverflowManaCostMul}　"
+                    : "";
+
+                m_StatsLine = $"伤害 {w.EffectiveDamage}　射速 {rateText}　" +
+                              $"蓝耗 {w.EffectiveManaCost}　回蓝 {w.EffectiveKillMana}　{overflowText}蓝量 {manaPart}";
             }
             else
             {

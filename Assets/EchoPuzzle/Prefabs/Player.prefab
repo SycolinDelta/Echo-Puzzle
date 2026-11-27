@@ -379,6 +379,11 @@ MonoBehaviour:
   stones: {fileID: 0}
   dagger: {fileID: 0}
   dungeonDodgeKey: 308
+  sneakEnabled: 1
+  disableSneakInDungeon: 1
+  sprintIsToggle: 1
+  sneakIsToggle: 1
+  toggleHoldThreshold: 0.25
   dodgeAccelTime: 0.2
   dodgeHoldTime: 0.1
   dodgeMaxHoldTime: 1.6
@@ -430,10 +435,10 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   dungeonModeOnly: 1
-  maxHealth: 6
+  maxHealth: 8
   startingHealth: -1
   invincibleDuration: 0.5
-  maxShield: 4
+  maxShield: 5
   startingShield: -1
   shieldRegenDelay: 4
   shieldRegenPerSecond: 1

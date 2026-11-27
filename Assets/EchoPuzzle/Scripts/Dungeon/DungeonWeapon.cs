@@ -63,10 +63,11 @@ namespace EchoPuzzle.Dungeon
         [Header("射击")]
         [Tooltip("两发之间的最小间隔（秒）。按住和连点都受它限制。\n\n" +
                  "0.18 ≈ 每秒 5.5 发（偏连发枪，太快）\n" +
-                 "0.25 ≈ 每秒 4 发（当前）\n" +
+                 "0.25 ≈ 每秒 4 发\n" +
                  "0.32 ≈ 每秒 3 发（半自动手感）\n" +
-                 "0.45 ≈ 每秒 2.2 发（重枪）\n\n" +
-                 "★ 这是**基础值**，buff 的 fireRateMul 会再除它。")]
+                 "0.45 ≈ 每秒 2.2 发（重枪）\n" +
+                 "0.5  ≈ 每秒 2 发（**当前生效值**）\n\n" +
+                 "★ 这是**基础值**，buff 的 fireRateMul 会再除它（射速倍率封顶 ×8）。")]
         [Min(0.02f)] public float fireInterval = 0.5f;
 
         // ── 蓝量经济（这几个数要一起看，单独调一个会失衡）──────────
@@ -133,8 +134,8 @@ namespace EchoPuzzle.Dungeon
         //   由 DungeonBullet.pointFadeTime 控制（默认 0.5）。
 
         [Header("怪物受击圆柱（实体只有 0.5，这里放大到能打到）")]
-        [Tooltip("水平半径（米）")]
-        [Min(0.1f)] public float monsterHurtRadius = 2f;
+        [Tooltip("水平半径（米）。普通怪物 1 米；boss 用 PuzzleMonster.dungeonHurtRadius 单独覆盖成 2 米")]
+        [Min(0.1f)] public float monsterHurtRadius = 1f;
 
         [Tooltip("竖直总高（米）")]
         [Min(0.1f)] public float monsterHurtHeight = 4f;
@@ -315,7 +316,54 @@ namespace EchoPuzzle.Dungeon
         ///       连发 ×1（+0.5）+ 高爆 ×1.75  ->  (1 + 0.5) × 1.75 = 2.625
         /// </summary>
         public float EffectiveManaCost
-            => Round3(Mathf.Max(0f, (manaCost + ManaCostAdd) * Mul(s => s.ManaCostMul)));
+            => Round3(Mathf.Max(0f, (manaCost + ManaCostAdd)
+                                     * Mul(s => s.ManaCostMul)
+                                     * OverflowManaCostMul));
+
+        // ------------------------------------------------------------------ 射速封顶（第十一周）
+
+        /// <summary>
+        /// 射速倍率上限。任务书："为了避免性能开销过高，限制玩家的射速最多 ×8"。
+        /// </summary>
+        public const float MaxFireRateMul = 8f;
+
+        /// <summary>buff 叠出来的**原始**射速倍率（可能超过 8）。</summary>
+        public float RawFireRateMul => Mul(s => s.FireRateMul);
+
+        /// <summary>真正生效的射速倍率（封顶 ×8，保留三位小数）。</summary>
+        public float EffectiveFireRateMul => Round3(Mathf.Min(MaxFireRateMul, RawFireRateMul));
+
+        /// <summary>
+        /// 溢出射速转成的**伤害倍率**：y = x / 8（x = 原始射速倍率）。
+        ///
+        /// ★ 例：13.122 倍 -> 13.122 / 8 = 1.64025 -> 保留三位 = 1.640
+        /// </summary>
+        public float OverflowDamageMul
+        {
+            get
+            {
+                float x = RawFireRateMul;
+                if (x <= MaxFireRateMul) return 1f;
+
+                return Round3(x / MaxFireRateMul);
+            }
+        }
+
+        /// <summary>
+        /// 溢出射速转成的**蓝耗倍率**：z = y² / 1.2（y = 上面的伤害倍率）。
+        ///
+        /// ★ 例：y = 1.640 -> 1.640² / 1.2 = 2.6896 / 1.2 = 2.24133 -> 2.241
+        /// </summary>
+        public float OverflowManaCostMul
+        {
+            get
+            {
+                float y = OverflowDamageMul;
+                if (y <= 1f) return 1f;
+
+                return Round3(y * y / 1.2f);
+            }
+        }
 
         /// <summary>
         /// 当前「霰弹改造」等级对应的扇形总角度（度）。
@@ -350,15 +398,8 @@ namespace EchoPuzzle.Dungeon
                 var b = DungeonBuffState.Instance;
                 if (b == null) return 0;
 
-                // 按 id 在 buff 池里找到 "shotgun" 这条定义，再问它叠了几级
-                var pool = DungeonBuffPool.All;
-                for (int i = 0; i < pool.Count; i++)
-                {
-                    DungeonBuffDef d = pool[i];
-                    if (d != null && d.id == "shotgun") return Mathf.Max(0, b.StacksOf(d));
-                }
-
-                return 0;
+                // ★ 第十一周：紫 / 橙的霰弹要**合并等级**，所以按 effectId 汇总
+                return Mathf.Max(0, b.MechanicLevel("shotgun"));
             }
         }
 
@@ -430,7 +471,7 @@ namespace EchoPuzzle.Dungeon
         /// ★★ 保留三位小数 ★★
         /// </summary>
         public float EffectiveDamage
-            => Round3(Mathf.Max(0.001f, damage * Mul(s => s.DamageMul)));
+            => Round3(Mathf.Max(0.001f, damage * Mul(s => s.DamageMul) * OverflowDamageMul));
 
         /// <summary>
         /// 含 buff 后的击杀回蓝。
@@ -444,7 +485,7 @@ namespace EchoPuzzle.Dungeon
 
         /// <summary>含 buff 后的射击间隔（秒）。</summary>
         public float EffectiveFireInterval
-            => Mathf.Max(0.02f, fireInterval / Mathf.Max(0.1f, Mul(s => s.FireRateMul)));
+            => Mathf.Max(0.02f, fireInterval / Mathf.Max(0.1f, EffectiveFireRateMul));
 
         /// <summary>含 buff 后的每秒射速（发/秒），给 HUD 显示用。</summary>
         public float EffectiveShotsPerSecond => 1f / Mathf.Max(0.02f, EffectiveFireInterval);
@@ -1142,14 +1183,8 @@ namespace EchoPuzzle.Dungeon
                 var b = DungeonBuffState.Instance;
                 if (b == null) return 0;
 
-                var pool = DungeonBuffPool.All;
-                for (int i = 0; i < pool.Count; i++)
-                {
-                    DungeonBuffDef d = pool[i];
-                    if (d != null && d.id == "aoe") return Mathf.Max(0, b.StacksOf(d));
-                }
-
-                return 0;
+                // ★ 第十一周：紫 / 橙的爆炸弹头合并等级（按 effectId 汇总）
+                return Mathf.Max(0, b.MechanicLevel("aoe"));
             }
         }
 
@@ -1371,11 +1406,13 @@ namespace EchoPuzzle.Dungeon
         /// 对玩家前方一小片扇形区域造成范围伤害并清除区域内的怪物子弹。
         ///
         ///   · 伤害：handBladeDamage（默认 4）× 扇形内每只怪；
+        ///   · ★ 打墙：怪物技能墙（MonsterSkillWall）也吃手刀伤害；
         ///   · 清子弹：区域内怪物子弹被清除，但保留爆炸视觉
         ///     （需求："仍然会产生爆炸、地面伤害等效果"——
         ///      爆炸视觉在 MonsterBulletRenderer.ClearArea 里触发，不掉血；
         ///      伤害地面是独立物体，本来就不受影响）；
-        ///   · CD：handBladeCooldown（0.5s）；命中怪物缩到 handBladeHitCooldown（0.1s）。
+        ///   · CD：handBladeCooldown（默认 0.3s）；
+        ///         **命中怪物或怪物墙**都缩到 handBladeHitCooldown（默认 0.1s）。
         /// </summary>
         private void TryHandBlade()
         {
@@ -1426,11 +1463,31 @@ namespace EchoPuzzle.Dungeon
                 Vector2 d = new Vector2(mon.transform.position.x - origin.x,
                                         mon.transform.position.z - origin.z);
 
-                if (d.magnitude > handBladeRadius) continue;
+                float dist = d.magnitude;
+
+                // ★ 手刀按**玩家子弹的受击圆柱**判定，不再要求砍到怪物中心。
+                //
+                //   以前是 `dist > handBladeRadius` 就直接跳过 —— 等于要求刀锋够到
+                //   怪物的**球心**；boss 球半径 1.5，站在 3 米外就永远砍不到。
+                //   现在把受击圆柱的半径（这只怪自己的 dungeonHurtRadius，
+                //   没有就用 monsterHurtRadius）算进刀锋射程：刀锋够到圆柱边缘就算命中。
+                float hurtR = mon.dungeonHurtRadius > 0.01f
+                            ? mon.dungeonHurtRadius
+                            : monsterHurtRadius;
+
+                if (dist - hurtR > handBladeRadius) continue;
 
                 Vector2 f = new Vector2(dir.x, dir.z).normalized;
-                float ang = Mathf.Acos(Mathf.Clamp(Vector2.Dot(f, d.normalized), -1f, 1f))
-                          * Mathf.Rad2Deg;
+
+                float ang = 0f;
+                if (dist > 0.01f)
+                {
+                    ang = Mathf.Acos(Mathf.Clamp(Vector2.Dot(f, d.normalized), -1f, 1f))
+                        * Mathf.Rad2Deg;
+
+                    // 扇形边缘同理：圆柱边缘蹭到扇形也算命中
+                    ang -= Mathf.Asin(Mathf.Clamp01(hurtR / dist)) * Mathf.Rad2Deg;
+                }
 
                 if (ang > handBladeHalfAngle) continue;
 
@@ -1447,19 +1504,240 @@ namespace EchoPuzzle.Dungeon
                 hitAny = true;
             }
 
-            // ---- 2) 清除扇形内的怪物子弹（保留爆炸视觉，不掉血）----
+            // ---- 2) ★ 打怪物技能墙 ★ ----
+            //
+            //   需求 1："让玩家的手刀可以对怪物用技能制造的怪物墙造成伤害，
+            //           并且手刀命中怪物墙或怪物时都会让手刀 cd 减至 0.1s。"
+            //   需求 2："手刀只要扇形面积碰到怪物墙的墙体就算打到了墙。"
+            //
+            //   ★ 以前只看「墙心」是否落在扇形里 —— 墙长 5 米，
+            //     站在墙的一端挥刀可能打不到，手感很差。
+            //   ✔ 现在做真正的**扇形 vs 墙体矩形**相交判定：
+            //     把墙的地面投影看成矩形（长 × 厚），任一角在扇形内、
+            //     玩家在矩形内、或矩形边与扇形的两条射线/圆弧相交，都算命中。
+            //   ★ 伤害直接走墙自己的 AbsorbPlayerBullet（和子弹同一条承伤路径），
+            //     所以血量、透明度、「血越多越实」那套效果全部自动生效。
+            MonsterSkillWall[] walls = FindObjectsOfType<MonsterSkillWall>(true);
+
+            for (int i = 0; i < walls.Length; i++)
+            {
+                MonsterSkillWall wall = walls[i];
+                if (wall == null) continue;
+
+                if (!SectorHitsWall(origin, dir, handBladeRadius, handBladeHalfAngle, wall))
+                    continue;
+
+                wall.AbsorbPlayerBullet(EffectiveHandBladeDamage);
+
+                hitAny = true;
+            }
+
+            // ---- 3) 清除扇形内的怪物子弹（保留爆炸视觉，不掉血）----
             if (MonsterBulletRenderer.Instance != null)
             {
                 MonsterBulletRenderer.Instance.ClearArea(origin, handBladeRadius,
                                                          handBladeHalfAngle, dir);
             }
 
-            // ---- 3) 命中了怪物：CD 缩到 0.1s ----
+            // ---- 4) 命中了怪物**或怪物墙**：CD 缩到 0.1s ----
             if (hitAny)
                 m_NextBladeTime = now + Mathf.Max(0.02f, handBladeHitCooldown);
 
-            // ---- 4) 视觉：扇形闪光 ----
+            // ---- 5) 视觉：扇形闪光 ----
             StartCoroutine(BladeFxRoutine(origin, dir));
+        }
+
+        // ---------------------------------------------------------------- 几何：扇形 vs 墙体
+
+        /// <summary>
+        /// 手刀扇形（圆心 origin、半径 radius、朝 dir、半角 halfAngleDeg）
+        /// 是否与这面墙的**墙体矩形**相交。
+        ///
+        /// ★ 需求："手刀只要扇形面积碰到怪物墙的墙体就算打到了墙。"
+        ///
+        /// ★ 墙的建模（见 MonsterSkillWall.Spawn）：
+        ///     · 本地 +X = 长度方向（scale.x）
+        ///     · 本地 +Z = 厚度方向（scale.z）
+        ///     · 姿态是 Quaternion.LookRotation(dir)，所以 +Z 正对 dir
+        ///   所以地面投影是一个「长 × 厚」的矩形，中心在墙的 transform.position。
+        ///
+        /// ★ 判定分四步（任一成立即算命中）：
+        ///     ① 矩形任一角落在扇形内
+        ///     ② 玩家自己在矩形内（贴脸挥刀）
+        ///     ③ 矩形任一边与扇形的两条边界射线相交
+        ///     ④ 矩形任一边与扇形的圆弧相交
+        /// </summary>
+        private static bool SectorHitsWall(Vector3 origin, Vector3 dir,
+                                           float radius, float halfAngleDeg,
+                                           MonsterSkillWall wall)
+        {
+            if (wall == null) return false;
+
+            Transform t = wall.transform;
+
+            // ---- 墙的地面投影：中心 + 两条本地轴 + 半长/半厚 ----
+            Vector3 wp = t.position;
+            Vector3 lp = new Vector3(origin.x, 0f, origin.z);
+            Vector2 c  = new Vector2(wp.x, wp.z);
+
+            Vector3 axX = t.right;   axX.y = 0f;      // 长度方向
+            Vector3 axZ = t.forward; axZ.y = 0f;      // 厚度方向
+
+            if (axX.sqrMagnitude < 1e-6f) axX = Vector3.right;
+            if (axZ.sqrMagnitude < 1e-6f) axZ = Vector3.forward;
+
+            axX.Normalize();
+            axZ.Normalize();
+
+            Vector3 ls = t.lossyScale;
+            float halfLen = Mathf.Abs(ls.x) * 0.5f;   // 沿 axX 的半长
+            float halfThk = Mathf.Abs(ls.z) * 0.5f;   // 沿 axZ 的半厚
+
+            Vector2 ux = new Vector2(axX.x, axX.z);
+            Vector2 uz = new Vector2(axZ.x, axZ.z);
+
+            // ---- 矩形的四个角 ----
+            Vector2[] corners = new Vector2[4];
+            corners[0] = c + ux * halfLen + uz * halfThk;
+            corners[1] = c + ux * halfLen - uz * halfThk;
+            corners[2] = c - ux * halfLen - uz * halfThk;
+            corners[3] = c - ux * halfLen + uz * halfThk;
+
+            Vector2 o2 = new Vector2(lp.x, lp.z);
+            Vector2 f2 = new Vector2(dir.x, dir.z);
+            if (f2.sqrMagnitude < 1e-6f) f2 = Vector2.up;
+            f2.Normalize();
+
+            // ---- ① 任一角在扇形内 ----
+            for (int i = 0; i < 4; i++)
+            {
+                if (PointInSector(o2, f2, radius, halfAngleDeg, corners[i]))
+                    return true;
+            }
+
+            // ---- ② 玩家在矩形内 ----
+            //   把玩家位置投到墙的两条本地轴上，看是否都在半长/半厚范围内
+            Vector2 rel = o2 - c;
+            float px = Vector2.Dot(rel, ux);
+            float pz = Vector2.Dot(rel, uz);
+
+            if (Mathf.Abs(px) <= halfLen && Mathf.Abs(pz) <= halfThk)
+                return true;
+
+            // ---- 扇形的两条边界射线（用线段表示，长度 = radius） ----
+            float rad = halfAngleDeg * Mathf.Deg2Rad;
+
+            Vector2 edgeA = o2 + Rotate2(f2,  rad) * radius;
+            Vector2 edgeB = o2 + Rotate2(f2, -rad) * radius;
+
+            for (int i = 0; i < 4; i++)
+            {
+                Vector2 a = corners[i];
+                Vector2 b = corners[(i + 1) % 4];
+
+                // ---- ③ 边 vs 两条射线 ----
+                if (SegSecIntersect(a, b, o2, edgeA)) return true;
+                if (SegSecIntersect(a, b, o2, edgeB)) return true;
+
+                // ---- ④ 边 vs **圆弧**（交点必须落在楔形内，不能只碰整圆）----
+                if (SegArcIntersect(a, b, o2, f2, radius, halfAngleDeg)) return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>点在扇形内？（用世界半径 + 角度双条件）</summary>
+        private static bool PointInSector(Vector2 origin, Vector2 dir,
+                                          float radius, float halfAngleDeg, Vector2 p)
+        {
+            Vector2 d = p - origin;
+
+            float sq = d.sqrMagnitude;
+            if (sq > radius * radius) return false;
+            if (sq < 1e-8f) return true;                 // 就在圆心
+
+            float ang = Mathf.Acos(Mathf.Clamp(Vector2.Dot(dir, d.normalized), -1f, 1f))
+                      * Mathf.Rad2Deg;
+
+            return ang <= halfAngleDeg;
+        }
+
+        /// <summary>2D 向量绕原点旋转。</summary>
+        private static Vector2 Rotate2(Vector2 v, float rad)
+        {
+            float cs = Mathf.Cos(rad);
+            float sn = Mathf.Sin(rad);
+
+            return new Vector2(v.x * cs - v.y * sn,
+                               v.x * sn + v.y * cs);
+        }
+
+        /// <summary>两条线段是否相交（含端点接触）。</summary>
+        private static bool SegSecIntersect(Vector2 p1, Vector2 p2, Vector2 q1, Vector2 q2)
+        {
+            Vector2 r = p2 - p1;
+            Vector2 s = q2 - q1;
+
+            float denom = r.x * s.y - r.y * s.x;
+
+            // 平行（含共线）：按"不交"处理就够用了 ——
+            // 共线重叠的情况在墙这种尺寸下几乎不会漏判（圆弧那步会兜住）
+            if (Mathf.Abs(denom) < 1e-9f) return false;
+
+            Vector2 d = q1 - p1;
+
+            float t = (d.x * s.y - d.y * s.x) / denom;
+            float u = (d.x * r.y - d.y * r.x) / denom;
+
+            return t >= 0f && t <= 1f && u >= 0f && u <= 1f;
+        }
+
+        /// <summary>
+        /// 线段是否与**圆弧**相交。
+        ///
+        /// ★ 和"与整圆相交"的区别：圆弧只是圆落在扇形张角内的那一段。
+        ///   如果只判整圆，墙在玩家正侧方（超出张角）也会被误判成命中。
+        ///
+        /// ★ 做法：先求线段与圆的交点，再逐个检查交点是否落在楔形内。
+        /// </summary>
+        private static bool SegArcIntersect(Vector2 a, Vector2 b, Vector2 c, Vector2 dir,
+                                            float r, float halfAngleDeg)
+        {
+            if (r <= 0f) return false;
+
+            Vector2 d = b - a;
+            Vector2 f = a - c;
+
+            float A = Vector2.Dot(d, d);
+            if (A < 1e-9f)
+            {
+                // 退化成一个点：直接看这个点在不在圆弧上
+                return PointInSector(c, dir, r, halfAngleDeg, a);
+            }
+
+            float B = 2f * Vector2.Dot(f, d);
+            float C = Vector2.Dot(f, f) - r * r;
+
+            float disc = B * B - 4f * A * C;
+            if (disc < 0f) return false;
+
+            float sq = Mathf.Sqrt(disc);
+            float t1 = (-B - sq) / (2f * A);
+            float t2 = (-B + sq) / (2f * A);
+
+            if (t1 >= 0f && t1 <= 1f)
+            {
+                Vector2 p1 = a + d * t1;
+                if (PointInSector(c, dir, r, halfAngleDeg, p1)) return true;
+            }
+
+            if (t2 >= 0f && t2 <= 1f)
+            {
+                Vector2 p2 = a + d * t2;
+                if (PointInSector(c, dir, r, halfAngleDeg, p2)) return true;
+            }
+
+            return false;
         }
 
         /// <summary>

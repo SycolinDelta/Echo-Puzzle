@@ -67,6 +67,7 @@
     <Compile Include="Assets\EchoPuzzle\Scripts\Dungeon\DungeonShopZone.cs" />
     <Compile Include="Assets\EchoPuzzle\Scripts\Dungeon\DungeonModalUi.cs" />
     <Compile Include="Assets\EchoPuzzle\Scripts\Dungeon\MonsterSkillWall.cs" />
+    <Compile Include="Assets\EchoPuzzle\Scripts\Dungeon\DungeonPrefabIndex.cs" />
     <Compile Include="Assets\EchoPuzzle\Scripts\Dungeon\MonsterZone.cs" />
     <Compile Include="Assets\EchoPuzzle\Scripts\Dungeon\DungeonBullet.cs" />
     <Compile Include="Assets\EchoPuzzle\Scripts\Dungeon\BulletTrailRenderer.cs" />
@@ -95,6 +96,7 @@
     <Compile Include="Assets\EchoPuzzle\Scripts\Level\Hide.cs" />
     <Compile Include="Assets\EchoPuzzle\Scripts\Player\MarkerSystem.cs" />
     <Compile Include="Assets\EchoPuzzle\Scripts\Level\Gravel.cs" />
+    <Compile Include="Assets\EchoPuzzle\Scripts\Dungeon\DungeonPluginColor.cs" />
     <Compile Include="Assets\EchoPuzzle\Scripts\Dungeon\DungeonManaHUD.cs" />
     <Compile Include="Assets\EchoPuzzle\Scripts\Dungeon\MonsterBulletRenderer.cs" />
     <Compile Include="Assets\EchoPuzzle\Scripts\Dungeon\DungeonLoadoutUI.cs" />
@@ -123,6 +125,7 @@
     <Compile Include="Assets\EchoPuzzle\Scripts\Dungeon\HandBladeLineRenderer.cs" />
     <Compile Include="Assets\EchoPuzzle\Scripts\Dungeon\DungeonWeapon.cs" />
     <Compile Include="Assets\EchoPuzzle\Scripts\Dungeon\DungeonShopUI.cs" />
+    <Compile Include="Assets\EchoPuzzle\Scripts\Dungeon\DungeonSlotToastUI.cs" />
     <Compile Include="Assets\EchoPuzzle\Scripts\Dungeon\MonsterDamageField.cs" />
     <Compile Include="Assets\EchoPuzzle\Scripts\Dungeon\DungeonMapGenerator.cs" />
     <Compile Include="Assets\EchoPuzzle\Scripts\Dungeon\BulletBlastRenderer.cs" />

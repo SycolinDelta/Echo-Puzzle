@@ -48,7 +48,7 @@ namespace EchoPuzzle.Dungeon
 
         [Header("刷新（花金币）")]
         [Tooltip("刷新一次三选一花多少金币。0 = 免费（但开局自选永远不能刷新）")]
-        [Min(0)] public int rerollCost = 3;
+        [Min(0)] public int rerollCost = 10;
 
         [Tooltip("每次选卡最多能刷新几次。-1 = 不限")]
         public int rerollLimit = -1;
@@ -120,6 +120,9 @@ namespace EchoPuzzle.Dungeon
 
         /// <summary>当前这次界面是"开局自选"（关掉时不去通知地图）。</summary>
         private bool m_IsStarterOpen;
+
+        /// <summary>当前这一轮是"蓝插件三选一"（模板刚升到紫色）。</summary>
+        private bool m_IsBluePick;
 
         /// <summary>本次界面已经刷新过几次。</summary>
         private int m_RerollsUsed;
@@ -259,6 +262,22 @@ namespace EchoPuzzle.Dungeon
                 }
             }
 
+            // ---- 蓝插件三选一（**已废弃**）----
+            //
+            //   ★ 需求："我希望玩家获得蓝色插件时会一口气获得所有三个蓝插件，而不是三选一。"
+            //   ✔ 现在模板升到紫色时，DungeonBuffState.GrantAllBluePlugins()
+            //     会直接把三个蓝插件全部发进背包，PendingBluePick **永远是 false**，
+            //     所以下面这个分支不会再触发，OpenBluePick() 成了死路径（保留不动）。
+            if (!IsOpen && !m_StarterPending)
+            {
+                var st = DungeonBuffState.Instance;
+
+                if (st != null && st.PendingBluePick && GameUI.Current == GameState.Playing)
+                {
+                    OpenBluePick();
+                }
+            }
+
             // ---- 倒计时：等地图淡出完成后弹 ----
             //
             // ★★ 新时序：淡出全黑 -> 弹 buff -> 选完 -> 建地图 -> 淡入 ★★
@@ -347,6 +366,44 @@ namespace EchoPuzzle.Dungeon
             Cursor.visible   = false;
         }
 
+        /// <summary>
+        /// 蓝插件三选一：模板刚升到紫色时弹一次。
+        ///
+        /// ★★ 已废弃 ★★
+        ///   需求改成"一口气获得所有三个蓝插件"，所以
+        ///   DungeonBuffState.GrantAllBluePlugins() 已经直接把三个全发了。
+        ///   这里保留只为兼容，PendingBluePick 永远是 false，本方法不会再被调用。
+        /// </summary>
+        private void OpenBluePick()
+        {
+            if (IsOpen) return;
+            if (GameUI.Current != GameState.Playing) return;
+
+            m_Options.Clear();
+            m_Options.AddRange(DungeonBuffPool.ByColor(PluginColor.Blue));
+
+            // 已经拿满蓝插件（理论上不会）就不再弹
+            var st = DungeonBuffState.Instance;
+            if (st != null) m_Options.RemoveAll(d => d == null || st.StacksOf(d) >= d.maxStacks);
+
+            if (m_Options.Count == 0)
+            {
+                if (st != null) st.ConsumeBluePick();
+                return;
+            }
+
+            IsOpen        = true;
+            m_IsStarterOpen = false;
+            m_IsBluePick    = true;
+            m_RerollsUsed   = 0;
+
+            m_PrevTimeScale = Time.timeScale;
+            Time.timeScale  = 0f;
+
+            Cursor.lockState = CursorLockMode.None;
+            Cursor.visible   = false;
+        }
+
         private void Open()
         {
             if (IsOpen) return;
@@ -386,7 +443,7 @@ namespace EchoPuzzle.Dungeon
         /// </summary>
         private void Reroll()
         {
-            if (!IsOpen || m_IsStarterOpen) return;
+            if (!IsOpen || m_IsBluePick) return;
 
             if (rerollLimit >= 0 && m_RerollsUsed >= rerollLimit) return;
 
@@ -422,7 +479,20 @@ namespace EchoPuzzle.Dungeon
             //     不通知的话，选完 buff 后地图永远不显示（卡黑屏）。
             m_IsStarterOpen = false;
 
-            NotifyMapBuffDone();
+            // ★ 蓝插件三选一：不管选没选，关掉就算处理过了（否则会一直重开）
+            //   ★ 它是"额外奖励"，不是每层通关那个 buff 流程，
+            //     所以**不能**去通知地图（地图这时并没有在等 buff）。
+            bool wasBluePick = m_IsBluePick;
+
+            if (wasBluePick)
+            {
+                m_IsBluePick = false;
+
+                if (DungeonBuffState.Instance != null)
+                    DungeonBuffState.Instance.ConsumeBluePick();
+            }
+
+            if (!wasBluePick) NotifyMapBuffDone();
             if (!IsOpen) return;
 
             IsOpen = false;
@@ -533,11 +603,28 @@ namespace EchoPuzzle.Dungeon
                 // 1) 整张卡片就是点击区（背景 + 悬停高亮都由这个样式画）
                 bool clicked = GUI.Button(card, GUIContent.none, m_ClickArea);
 
-                // 2) 细边框
-                DrawBorder(card);
+                float pad = Mathf.Max(16f, cardW * 0.07f);
+
+                // ★ 第十一周：卡片按插件颜色上色（白 / 绿 / 紫）
+                //   底色铺一层很淡的同色，边框和右上角的颜色名用纯色 ——
+                //   不抢文字的对比度，但一眼能看出这是哪种插件。
+                Color tint = SlotRules.UiColor(d.color);
+
+                Color pcFill = GUI.color;
+                GUI.color = new Color(tint.r, tint.g, tint.b, 0.12f);
+                GUI.DrawTexture(card, m_Pixel);
+                GUI.color = pcFill;
+
+                // 2) 细边框（用插件颜色）
+                DrawBorder(card, tint);
+
+                Color pcTag = GUI.color;
+                GUI.color = tint;
+                GUI.Label(new Rect(cardX + cardW - pad - 130f, cardY + 20f, 130f, 40f),
+                          SlotRules.NameOf(d.color) + "插件", m_IndexStyle);
+                GUI.color = pcTag;
 
                 // 3) 文字（画在按钮之上）
-                float pad = Mathf.Max(16f, cardW * 0.07f);
 
                 //    左上角的编号，提示"按数字键也能选"
                 GUI.Label(new Rect(cardX + pad, cardY + 20f, 60f, 40f), (i + 1).ToString(), m_IndexStyle);
@@ -576,8 +663,13 @@ namespace EchoPuzzle.Dungeon
 
             // ---- 底部：刷新按钮 + 提示 ----
             //
-            // ★ 开局自选不显示刷新：它列的是"全部可选"，刷新没有意义。
-            if (!m_IsStarterOpen && DungeonCurrency.Instance != null)
+            // ★ 开局三选一**也**给刷新按钮。
+            //
+            //   以前不给是因为"开局列的是全部可选 buff"，刷新没意义；
+            //   现在开局也是随机抽 3 张，玩家同样会想重抽，所以放开。
+            //   不会被白嫖：开局金币是 0（DungeonCurrency.startGold 默认 0），
+            //   按钮显示为灰、按 F 也不扣钱不换卡。
+            if (DungeonCurrency.Instance != null)
             {
                 float btnW = 320f;
                 float btnH = 46f;
@@ -610,8 +702,14 @@ namespace EchoPuzzle.Dungeon
         /// <summary>画一圈细边框（四条 1×1 拉伸的矩形）。</summary>
         private void DrawBorder(Rect r)
         {
+            DrawBorder(r, cardBorderColor);
+        }
+
+        /// <summary>用指定颜色画四边框（第十一周：按插件颜色给卡片上色）。</summary>
+        private void DrawBorder(Rect r, Color color)
+        {
             Color prev = GUI.color;
-            GUI.color = cardBorderColor;
+            GUI.color = color;
 
             float t = Mathf.Max(1f, borderThickness);
 

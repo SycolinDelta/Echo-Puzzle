@@ -1410,6 +1410,72 @@ namespace EchoPuzzle
         [Tooltip("闪避按键")]
         public KeyCode dungeonDodgeKey = KeyCode.LeftAlt;
 
+        // ---------------------------------------------------------------- 冲刺 / 潜行
+
+        [Header("冲刺 / 潜行")]
+
+        [Tooltip("★ 潜行开关。关掉之后按 Ctrl / C 不会有任何效果。\n\n" +
+                 "★ 需求：在地牢模式禁用潜行（不删代码，只加开关，后面可能要改回来）。\n" +
+                 "★ 地牢模式下这个值会被强制当成 false，见 SneakUsable。")]
+        public bool sneakEnabled = true;
+
+        [Tooltip("★ 地牢模式是否禁用潜行。\n\n" +
+                 "需求：我希望在地牢模式禁用潜行。\n" +
+                 "★ 想恢复就把这个勾上（或改代码里的默认值）。")]
+        public bool disableSneakInDungeon = true;
+
+        [Tooltip("★ 按一下 Shift 切到冲刺、再按一下回走路（不用一直按着）。\n\n" +
+                 "★ 关掉就恢复成「按住 Shift 才冲刺」的老行为。")]
+        public bool sprintIsToggle = true;
+
+        [Tooltip("★ 按一下 Ctrl 切到潜行、再按一下回走路。\n\n" +
+                 "★ 关掉就是「按住 Ctrl 才潜行」。")]
+        public bool sneakIsToggle = true;
+
+        [Tooltip("★ 长按判定阈值（秒）。\n\n" +
+                 "★ 需求：点按 = 切换模式；长按 = 按住时冲刺、松开后退出。\n" +
+                 "★ 按住超过这个时长就算「长按」，松开时退出冲刺。\n" +
+                 "★ 小于它就算「点按」，松开时保持切换状态。")]
+        [Min(0.05f)] public float toggleHoldThreshold = 0.25f;
+
+        /// <summary>切换式冲刺的开 / 关状态（只在 sprintIsToggle = true 时使用）。</summary>
+        private bool m_RunToggled;
+
+        /// <summary>切换式潜行的开 / 关状态（只在 sneakIsToggle = true 时使用）。</summary>
+        private bool m_SneakToggled;
+
+        // ---- 长按 / 点按的判定状态 ----
+
+        /// <summary>Shift 按下的时刻（-1 = 没按着）。</summary>
+        private float m_SprintDownAt = -1f;
+
+        /// <summary>这次按住是不是已经判定成"长按"了。</summary>
+        private bool m_SprintLongPress;
+
+        /// <summary>Ctrl 按下的时刻（-1 = 没按着）。</summary>
+        private float m_SneakDownAt = -1f;
+
+        /// <summary>这次按住是不是已经判定成"长按"了。</summary>
+        private bool m_SneakLongPress;
+
+        /// <summary>
+        /// 现在能不能用潜行。
+        ///
+        /// ★ 三个条件全都要满足：
+        ///     1) 全局开关 sneakEnabled 开着
+        ///     2) 不是"地牢模式 + disableSneakInDungeon"
+        ///     3) 不在闪避中
+        /// </summary>
+        public bool SneakUsable
+        {
+            get
+            {
+                if (!sneakEnabled) return false;
+                if (GameUI.IsDungeonMode && disableSneakInDungeon) return false;
+                return true;
+            }
+        }
+
         // ★★ 闪避的移速曲线（三段式，总长 = 加速 + 维持 + 减速）★★
         //
         //   需求原文："把闪避时的加速度改成平滑的加减速，不论原本的速度是多少，
@@ -1748,11 +1814,153 @@ namespace EchoPuzzle
             NoteAction(PlayerAction.Zoom);
         }
 
+        /// <summary>
+        /// 读"现在要不要冲刺"。**点按和长按都支持**。
+        ///
+        /// ★ 需求原文：
+        ///   "如果玩家点按 shift，就切换模式，如果是长按，就在松开 shift 后退出冲刺。
+        ///    如果玩家先点按了一下切换到冲刺模式，然后又长按 shift，
+        ///    这同样会在松开 shift 后退出冲刺。点按和长按都可以，这才是我想要的。"
+        ///
+        /// ── 判定规则 ─────────────────────────────────────
+        ///   按下 Shift：
+        ///     · 立刻进入冲刺（点按要立刻见效）
+        ///     · 记下按下时刻
+        ///   按住期间：
+        ///     · 超过 toggleHoldThreshold（默认 0.25 秒）-> 标记为「长按」
+        ///   松开 Shift：
+        ///     · 是长按   -> **强制退出冲刺**（不管之前是不是切换状态）
+        ///     · 是点按   -> 保持现在的冲刺状态（切换语义）
+        ///       ★ 这里要特殊处理：因为按下时已经进入冲刺了，
+        ///         点按松开时**不能**再翻转一次，否则就变成"按一下就取消"了。
+        ///
+        /// ★ 举例（默认 0.25 秒阈值）：
+        ///   · 短按 Shift（<0.25s）    -> 一直冲刺，再短按一次 -> 回走路
+        ///   · 已开冲刺，长按 Shift    -> 按住期间冲刺，松开 -> 回走路
+        ///   · 已开冲刺，短按 Shift    -> 回走路
+        /// </summary>
+        private bool ReadSprintState()
+        {
+            bool held = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
+            bool down = Input.GetKeyDown(KeyCode.LeftShift) || Input.GetKeyDown(KeyCode.RightShift);
+            bool up   = Input.GetKeyUp(KeyCode.LeftShift)   || Input.GetKeyUp(KeyCode.RightShift);
+
+            // ---- 老行为：按住才冲刺 ----
+            if (!sprintIsToggle)
+            {
+                m_RunToggled  = false;
+                m_SprintDownAt = -1f;
+                m_SprintLongPress = false;
+                return held;
+            }
+
+            // ---- 按下：翻转冲刺状态，记时刻 ----
+            //
+            // ★ 这里用**翻转**而不是"设为 true"：
+            //   · 原本在走路 -> 按下进入冲刺（点按 = 开）
+            //   · 原本在冲刺 -> 按下退出冲刺（点按 = 关）
+            //   · 但如果是长按，松开时会强制关掉，所以翻转成"关"也一样
+            //   · 若翻转成"开"且随后长按松手，下面 up 分支会强制关掉
+            if (down)
+            {
+                m_SprintDownAt    = Time.unscaledTime;
+                m_SprintLongPress = false;
+
+                m_RunToggled = !m_RunToggled;
+
+                if (m_RunToggled) m_SneakToggled = false;   // 互斥
+            }
+
+            // ---- 按住期间：超过阈值就标记成长按 ----
+            if (held && m_SprintDownAt >= 0f && !m_SprintLongPress)
+            {
+                if (Time.unscaledTime - m_SprintDownAt >= toggleHoldThreshold)
+                    m_SprintLongPress = true;
+            }
+
+            // ---- 松开：长按则强制退出；点按则保持按下的翻转结果 ----
+            if (up)
+            {
+                if (m_SprintLongPress)
+                    m_RunToggled = false;    // ★ 长按松手 -> 一定退出冲刺
+
+                // 点按：保持按下时翻转的结果，什么都不做
+
+                m_SprintDownAt    = -1f;
+                m_SprintLongPress = false;
+            }
+
+            return m_RunToggled;
+        }
+
+        /// <summary>
+        /// 读"现在要不要潜行"。规则与冲刺完全一致（点按切换 / 长按松手退出）。
+        ///
+        /// ★ 地牢模式下 SneakUsable 恒为 false，所以这里永远返回 false ——
+        ///   不会进入潜行状态，但代码一行没删，改 disableSneakInDungeon 就能恢复。
+        /// </summary>
+        private bool ReadSneakState()
+        {
+            // ★ 禁用潜行时直接返回 false，并清掉状态
+            if (!SneakUsable)
+            {
+                m_SneakToggled    = false;
+                m_SneakDownAt     = -1f;
+                m_SneakLongPress  = false;
+                return false;
+            }
+
+            bool held = Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl)
+                     || Input.GetKey(KeyCode.C);
+            bool down = Input.GetKeyDown(KeyCode.LeftControl) || Input.GetKeyDown(KeyCode.RightControl)
+                     || Input.GetKeyDown(KeyCode.C);
+            bool up   = Input.GetKeyUp(KeyCode.LeftControl)   || Input.GetKeyUp(KeyCode.RightControl)
+                     || Input.GetKeyUp(KeyCode.C);
+
+            // ---- 老行为：按住才潜行 ----
+            if (!sneakIsToggle)
+            {
+                m_SneakToggled   = false;
+                m_SneakDownAt    = -1f;
+                m_SneakLongPress = false;
+                return held;
+            }
+
+            // ---- 按下：翻转潜行状态 ----
+            if (down)
+            {
+                m_SneakDownAt    = Time.unscaledTime;
+                m_SneakLongPress = false;
+
+                m_SneakToggled = !m_SneakToggled;
+
+                if (m_SneakToggled) m_RunToggled = false;   // 互斥
+            }
+
+            // ---- 按住期间 ----
+            if (held && m_SneakDownAt >= 0f && !m_SneakLongPress)
+            {
+                if (Time.unscaledTime - m_SneakDownAt >= toggleHoldThreshold)
+                    m_SneakLongPress = true;
+            }
+
+            // ---- 松开 ----
+            if (up)
+            {
+                if (m_SneakLongPress)
+                    m_SneakToggled = false;
+
+                m_SneakDownAt    = -1f;
+                m_SneakLongPress = false;
+            }
+
+            return m_SneakToggled;
+        }
+
         private void HandleMove()
         {
-            bool wantRun   = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
-            bool wantSneak = Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl)
-                          || Input.GetKey(KeyCode.C);
+            bool wantRun   = ReadSprintState();
+            bool wantSneak = ReadSneakState();
 
             // ★★ 闪避期间：**暂时退出冲刺 / 潜行** ★★
             //

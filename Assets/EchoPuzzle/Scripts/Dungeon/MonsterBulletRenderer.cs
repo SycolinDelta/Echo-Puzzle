@@ -102,6 +102,12 @@ namespace EchoPuzzle.Dungeon
             public float blastRadius = 2.5f;
             public int   blastDamage = 2;
 
+            /// <summary>
+            /// 撞墙剩余反弹次数（子弹圈技能用）。0 = 撞到就爆炸，和原来一样。
+            /// 反弹只发生在撞到非玩家的世界几何体上；玩家仍然正常命中结算。
+            /// </summary>
+            public int bouncesLeft;
+
             /// <summary>生命期是否已经结束（回收用）。</summary>
             public bool dead;
         }
@@ -109,6 +115,9 @@ namespace EchoPuzzle.Dungeon
         // ---------------------------------------------------------------- 运行时
 
         private readonly List<Body> m_Bodies = new List<Body>(64);
+
+        /// <summary>SphereCastNonAlloc 的复用缓冲（避免每帧给每颗子弹分配数组）。</summary>
+        private readonly RaycastHit[] m_HitBuffer = new RaycastHit[16];
 
         private Mesh         m_Mesh;
         private MeshFilter   m_Filter;
@@ -121,7 +130,8 @@ namespace EchoPuzzle.Dungeon
         private Color[]   m_Colors;
         private int[]     m_Triangles;
 
-        /// <summary>撞到这些层 -> 爆炸（墙 / 玩家 / 怪物）。</summary>
+        /// <summary>SphereCast 会检测这些层；命中后的处理见 FlyTick / ShouldPassThrough
+        /// （怪物、无敌玩家、己方技能墙会穿过；子弹圈子弹撞墙会反弹）。</summary>
         public LayerMask hitMask = ~((1 << 2) | (1 << 4) | (1 << 5));
 
         private SonarTrailRenderer m_Trails;
@@ -176,6 +186,14 @@ namespace EchoPuzzle.Dungeon
                 b.color               = owner.bulletColor;
             }
 
+            // ★ 出生时保持 Fade.Hidden（Body 的默认值），**不**做任何提前淡入。
+            //
+            //   怪物子弹的既定规则：
+            //     · 只有声波波前（SonarWavefrontNearby）靠近时才亮
+            //     · 亮了之后 1 秒保持、0.5 秒淡出，重新回到 Hidden
+            //   之前在这里写过一行"出膛就 FadingIn"，结果子弹在怪物身边
+            //   一直亮着、不再重新隐藏 —— 已经删掉，恢复原规则。
+
             m_Bodies.Add(b);
             return b;
         }
@@ -224,33 +242,76 @@ namespace EchoPuzzle.Dungeon
                         ? b.selfRadius
                         : Mathf.Max(0.01f, radius);
 
-            if (dist > 0f &&
-                Physics.SphereCast(b.pos, castR, b.dir, out RaycastHit hit, dist,
-                                   hitMask, QueryTriggerInteraction.Ignore))
+            if (dist > 0f)
             {
-                // ★★ 判断撞到的是谁 ★★
+                // ★★ 一次性扫出这一整段路程上的**所有**碰撞体，再把该忽略的整个丢掉 ★★
                 //
-                //   需求 1："玩家在闪避的无敌帧期间不会被怪物子弹碰撞到"
-                //         -> 撞到"无敌中的玩家"直接**穿过去**，不爆炸
-                //   需求 2："怪物始终不会被怪物子弹碰撞到"
-                //         -> 撞到怪物一律**穿过去**，不爆炸
+                //   需求："怪物子弹不会被怪物碰撞" —— 不是"撞到之后强行穿过去"，
+                //   而是**根本没有这次碰撞**。
                 //
-                //   ★ 穿过去的做法：把 b.pos 往前推过这个碰撞体，
-                //     然后继续本帧的剩余位移。用连续检测避免卡在体内。
-                if (ShouldPassThrough(hit.collider))
-                {
-                    b.pos = hit.point + b.dir * PierceStep;
+                //   ★ 为什么不用 Physics.SphereCast：
+                //     它只给最近的**一个**命中。如果那一个是怪物，就只能原地丢弃这次
+                //     结果（或者像以前那样把子弹瞬移过去），于是出现两个副作用：
+                //       · 子弹在怪物身上"卡帧"，一帧只推进一点点；
+                //       · 瞬移量按碰撞体 bounds 算（boss 放大后接近 3 米），
+                //         画面上就是一下子跳过一大段。
+                //   ★ SphereCastNonAlloc 一次拿到多个候选，挑出**第一个真正有效的**
+                //     （墙 / 玩家），怪物、无敌帧的玩家、己方技能墙直接不参与比较。
+                //     子弹该走多远走多远，速度是匀速的。
+                int count = Physics.SphereCastNonAlloc(b.pos, castR, b.dir, m_HitBuffer, dist,
+                                                      hitMask, QueryTriggerInteraction.Ignore);
 
-                    b.lifetime += dt;
-                    if (b.lifetime >= b.maxLifetime) Explode(b, false);
-                    return;
+                RaycastHit hit     = default;
+                bool       found   = false;
+                float      nearest = float.MaxValue;
+
+                for (int i = 0; i < count; i++)
+                {
+                    RaycastHit h = m_HitBuffer[i];
+                    if (h.collider == null) continue;
+
+                    // 怪物 / 无敌玩家 / 己方技能墙：对子弹来说等于不存在
+                    if (ShouldPassThrough(h.collider)) continue;
+
+                    float d = h.distance > 0f ? h.distance : 0f;
+                    if (d >= nearest) continue;
+
+                    nearest = d;
+                    hit     = h;
+                    found   = true;
                 }
 
-                b.pos = hit.point;
+                if (found)
+                {
+                    bool hitPlayer = hit.collider.GetComponentInParent<PlayerController>() != null;
 
-                bool hitPlayer = hit.collider.GetComponentInParent<PlayerController>() != null;
-                Explode(b, hitPlayer);
-                return;
+                    // ★★ 子弹圈：撞墙反弹（最多 bouncesLeft 次）★★
+                    //   玩家不受反弹影响：打到玩家永远按普通命中结算。
+                    if (!hitPlayer && b.bouncesLeft > 0)
+                    {
+                        Vector3 n = hit.normal;
+                        n.y = 0f;                       // 只按墙面法线的水平分量反射
+                        if (n.sqrMagnitude > 1e-6f)
+                        {
+                            n.Normalize();
+                            b.dir = Vector3.Reflect(b.dir, n);
+                            b.dir.y = 0f;
+                            if (b.dir.sqrMagnitude > 1e-6f) b.dir.Normalize();
+
+                            // 从墙面往外挪出球体半径，避免下一帧又立刻命中同一面墙
+                            b.pos = hit.point + n * (castR + 0.02f);
+                            b.bouncesLeft--;
+
+                            b.lifetime += dt;
+                            if (b.lifetime >= b.maxLifetime) Explode(b, false);
+                            return;
+                        }
+                    }
+
+                    b.pos = hit.point;
+                    Explode(b, hitPlayer);
+                    return;
+                }
             }
 
             b.pos += b.dir * dist;
@@ -285,15 +346,13 @@ namespace EchoPuzzle.Dungeon
         /// <summary>最近一次找到的 PlayerHealth（给 RandomPointOnPlayer 用）。</summary>
         private static PlayerHealth m_PlayerHealthRef;
 
-        /// <summary>穿透用的前推距离（米）。比任何碰撞体略大一点就够。</summary>
-        private const float PierceStep = 0.35f;
-
         /// <summary>
-        /// 这颗子弹撞到 <paramref name="col"/> 时，是否应该**直接穿过去**。
+        /// 这颗子弹撞到 <paramref name="col"/> 时，是否应该**直接忽略**。
         ///
-        /// ★ 会穿过去的两种情况：
+        /// ★ 会被忽略的三种情况：
         ///     1. 撞到的是玩家，但玩家此刻处于**无敌帧**（闪避中 / 受击后无敌）
-        ///     2. 撞到的是怪物（怪物永远不吃怪物子弹）
+        ///     2. 撞到的是怪物（怪物永远不吃怪物子弹，子弹也永远撞不到它）
+        ///     3. 怪物技能墙（己方子弹不能把自己施法者的墙打爆）
         /// </summary>
         private bool ShouldPassThrough(Collider col)
         {
@@ -575,7 +634,17 @@ namespace EchoPuzzle.Dungeon
             m_Renderer.receiveShadows    = false;
 
             Material mat = EchoRuntimeMaterials.AimOverlay(Color.white);
-            if (mat != null) m_Renderer.sharedMaterial = mat;
+            if (mat != null)
+            {
+                // ★ 显式压到 Overlay 队列，并且关深度测试开关里最要命的那一项。
+                //   AimOverlay 的 shader 本身就把 ZTest 硬编码成 Always；
+                //   但万一 shader 没找到、回落到 URP/Unlit，那些属性就得靠这里兜住 ——
+                //   需求："子弹在视觉上不能被怪物的实体黑球挡住"。
+                mat.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Overlay;
+                mat.SetInt("_ZTest", (int)UnityEngine.Rendering.CompareFunction.Always);
+                mat.SetInt("_ZWrite", 0);
+                m_Renderer.sharedMaterial = mat;
+            }
         }
 
         private void LateUpdate()

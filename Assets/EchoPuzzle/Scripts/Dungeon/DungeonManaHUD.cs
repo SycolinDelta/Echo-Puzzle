@@ -18,7 +18,8 @@ namespace EchoPuzzle.Dungeon
     public sealed class DungeonManaHUD : MonoBehaviour
     {
         [Header("位置（1080 高度基准的像素）")]
-        public Vector2 origin = new Vector2(73f, 166f);
+        // ★ 需求：盾条移到血条下方后，蓝条跟着下移一行（166 -> 228）
+        public Vector2 origin = new Vector2(50f, 210f);
 
         [Tooltip("条宽")]
         [Min(20f)] public float width = 390f;

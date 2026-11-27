@@ -41,8 +41,13 @@ namespace EchoPuzzle.Dungeon
         public Color emptyColor = new Color(1f, 0.28f, 0.32f, 0.35f);
 
         [Header("护盾")]
-        [Tooltip("护盾图标与爱心之间的水平间距")]
-        public float shieldSpacing = 70f;
+        [Tooltip("护盾行相对爱心那一行的垂直偏移（像素）。\n\n" +
+                 "★ 需求：盾条移到血条下方。\n" +
+                 "★ 这个值就是两行之间的距离。改大会整体往下推。")]
+        public float shieldRowOffset = 75f;
+
+        [Tooltip("护盾图标相对爱心起始位置的水平间距（0 = 和爱心左对齐）")]
+        public float shieldSpacing = 0f;
 
         [Tooltip("护盾图标的间距（护盾之间）")]
         public float shieldGap = 70f;
@@ -124,18 +129,20 @@ namespace EchoPuzzle.Dungeon
                 DrawHeart(cx, cy, r, filled);
             }
 
-            // ★★ 护盾：画在**血量右边、蓝量左边** ★★
+            // ★★ 护盾：单独一行，在爱心下方 ★★
             //
-            //   位置：血量那一排的最右侧 + shieldSpacing
-            //   蓝条在 DungeonManaHUD 里，origin = (73,166)，
-            //   而血量在 y = 73，两者本来就分两行；
-            //   这里把护盾接在**血量同一行**的右端，视觉上正好夹在两者之间。
+            //   需求："我希望将盾条移动到血条下方，并将蓝条等其他 ui 一并下移。"
+            //
+            //   ★ 以前护盾画在爱心同一行的右端；
+            //     现在改成独立一行，y = 爱心行 + shieldRowOffset。
+            //   ★ 水平方向默认和爱心左对齐（shieldSpacing = 0）。
             int shieldMax = m_Health.MaxShield;
             int shieldCur = m_Health.Shield;
 
             if (shieldMax > 0)
             {
-                float shieldStartX = screenOrigin.x + max * sp + shieldSpacing;
+                float shieldStartX = screenOrigin.x + shieldSpacing;
+                float shieldRowY   = screenOrigin.y + shieldRowOffset;
                 float sr = shieldRadius;
 
                 for (int i = 0; i < shieldMax; i++)
@@ -143,7 +150,7 @@ namespace EchoPuzzle.Dungeon
                     bool filled = i < shieldCur;
 
                     float cx = shieldStartX + i * shieldGap;
-                    float cy = screenOrigin.y;
+                    float cy = shieldRowY;
 
                     DrawShield(cx, cy, sr, filled);
                 }

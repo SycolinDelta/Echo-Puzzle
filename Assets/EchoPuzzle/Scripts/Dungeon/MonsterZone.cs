@@ -31,6 +31,8 @@ namespace EchoPuzzle.Dungeon
     ///   其中 <c>zone</c> 是 <see cref="MonsterZoneArgs"/>，带这些信息：
     ///     · <c>Cells</c>      这片怪物区包含哪些格子（可以在里面刷怪）
     ///     · <c>Center</c>     这片区域的世界坐标中心
+    ///     · <c>IsBossZone</c> 这片区域是不是 boss 房（字母 "B" 的块）
+    ///     · <c>BossCell</c>   boss 固定落点（矩阵坐标，B 块里模板第 18 行 18 列）
     ///     · <c>Finish</c>()   怪物潮打完后**必须**调一次，否则玩家永远被锁在里面
     ///
     ///   典型写法：
@@ -74,15 +76,33 @@ namespace EchoPuzzle.Dungeon
             /// <summary>矩阵一格对应的世界尺寸。</summary>
             public readonly float CellSize;
 
+            /// <summary>
+            /// 这片区域是不是 boss 房（字母 "B" 的块）。
+            ///
+            /// ★ true  = 怪物潮只刷**一只** boss，位置固定为 <see cref="BossCell"/>；
+            /// ★ false = 普通怪物房，按常规的"多波多只"刷怪。
+            /// </summary>
+            public readonly bool IsBossZone;
+
+            /// <summary>
+            /// boss 固定落点（矩阵坐标）= B 块里模板第 18 行 18 列。
+            /// 只有 <see cref="IsBossZone"/> 为 true 时才有意义。
+            /// </summary>
+            public readonly Vector2Int BossCell;
+
             private readonly System.Action m_OnFinish;
             private bool m_Finished;
 
             public MonsterZoneArgs(List<Vector2Int> cells, Vector3 center,
-                                   float cellSize, System.Action onFinish)
+                                   float cellSize, System.Action onFinish,
+                                   bool isBossZone = false,
+                                   Vector2Int bossCell = default(Vector2Int))
             {
                 Cells    = cells;
                 Center   = center;
                 CellSize = cellSize;
+                IsBossZone = isBossZone;
+                BossCell   = bossCell;
                 m_OnFinish = onFinish;
             }
 
@@ -171,6 +191,17 @@ namespace EchoPuzzle.Dungeon
         /// <summary>当前正在封锁中的区域格子。</summary>
         private readonly HashSet<Vector2Int> m_Locked = new HashSet<Vector2Int>();
 
+        /// <summary>
+        /// boss 房（字母 "B"）里的怪物区格子。
+        ///
+        /// ★ 区域里只要有一格在这里，这次怪物潮就走 boss 流程（只刷一只 boss）。
+        /// ★ 空集合 = 这张图没有 boss 房。
+        /// </summary>
+        private readonly HashSet<Vector2Int> m_BossCells = new HashSet<Vector2Int>();
+
+        /// <summary>boss 固定落点（矩阵坐标）；(-1,-1) = 这张图没有 boss 房。</summary>
+        private Vector2Int m_BossAnchorCell = new Vector2Int(-1, -1);
+
         /// <summary>封锁用的方块。</summary>
         private readonly List<GameObject> m_Barriers = new List<GameObject>();
 
@@ -225,7 +256,16 @@ namespace EchoPuzzle.Dungeon
         /// </summary>
         /// <param name="cells">矩阵里所有数字 3 的格子。</param>
         /// <param name="cellSize">矩阵一格的世界尺寸。</param>
-        public void RegisterCells(List<Vector2Int> cells, float cellSize)
+        /// <param name="bossCells">
+        /// boss 房（字母 "B"）里的 3 格子。传 null / 空 = 这张图没有 boss 房。
+        /// </param>
+        /// <param name="bossAnchorCell">
+        /// boss 固定落点（矩阵坐标，B 块里模板第 18 行 18 列）。
+        /// 传 (-1,-1) = 没有 boss 房。
+        /// </param>
+        public void RegisterCells(List<Vector2Int> cells, float cellSize,
+                                  List<Vector2Int> bossCells = null,
+                                  Vector2Int bossAnchorCell = default(Vector2Int))
         {
             m_CellSize = Mathf.Max(0.1f, cellSize);
 
@@ -235,6 +275,17 @@ namespace EchoPuzzle.Dungeon
             ClearBarriers();
             m_Locked.Clear();
             m_PendingWaves = 0;
+
+            m_BossCells.Clear();
+            m_BossAnchorCell = new Vector2Int(-1, -1);
+
+            if (bossCells != null)
+            {
+                for (int i = 0; i < bossCells.Count; i++)
+                    m_BossCells.Add(bossCells[i]);
+
+                if (m_BossCells.Count > 0) m_BossAnchorCell = bossAnchorCell;
+            }
 
             if (cells == null) return;
 
@@ -302,11 +353,25 @@ namespace EchoPuzzle.Dungeon
 
 
             // ---- 5) 广播怪物潮事件 ----
-            TriggerWave(region, center);
+            //
+            //   ★ boss 房（字母 "B"）：这片区域里有任何一格属于 B 块，
+            //     这次怪物潮就走 boss 流程，并把"模板第 18 行 18 列"的落点带上。
+            bool isBossZone = false;
+
+            if (m_BossCells.Count > 0)
+            {
+                for (int i = 0; i < region.Count; i++)
+                {
+                    if (m_BossCells.Contains(region[i])) { isBossZone = true; break; }
+                }
+            }
+
+            TriggerWave(region, center, isBossZone, m_BossAnchorCell);
         }
 
         /// <summary>触发怪物潮。</summary>
-        private void TriggerWave(List<Vector2Int> region, Vector3 center)
+        private void TriggerWave(List<Vector2Int> region, Vector3 center,
+                                 bool isBossZone, Vector2Int bossCell)
         {
             m_PendingWaves++;
 
@@ -317,7 +382,8 @@ namespace EchoPuzzle.Dungeon
             if (playLockSound)
                 AudioSystem.Play(AudioSystem.Cue.Trigger);
 
-            var args = new MonsterZoneArgs(region, center, m_CellSize, OnWaveFinished);
+            var args = new MonsterZoneArgs(region, center, m_CellSize, OnWaveFinished,
+                                           isBossZone, bossCell);
 
             if (OnMonsterWave != null)
             {

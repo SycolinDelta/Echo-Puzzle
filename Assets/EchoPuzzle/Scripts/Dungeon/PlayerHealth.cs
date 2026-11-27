@@ -39,7 +39,7 @@ namespace EchoPuzzle.Dungeon
 
         [Header("生命值")]
         [Tooltip("最大生命值")]
-        [Min(1)] public int maxHealth = 6;
+        [Min(1)] public int maxHealth = 8;
 
         [Tooltip("开局生命值。留 -1 表示用 Max Health")]
         public int startingHealth = -1;
@@ -50,7 +50,7 @@ namespace EchoPuzzle.Dungeon
         [Header("护盾")]
         [Tooltip("护盾上限（需求：四点）。\n\n" +
                  "★ 护盾挡在血量前面：受伤先扣护盾，护盾扣完才扣血。")]
-        [Min(0)] public int maxShield = 4;
+        [Min(0)] public int maxShield = 5;
 
         [Tooltip("开局护盾。留 -1 表示用 Max Shield")]
         public int startingShield = -1;

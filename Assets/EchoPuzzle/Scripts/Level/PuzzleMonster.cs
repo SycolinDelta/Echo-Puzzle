@@ -450,6 +450,27 @@ namespace EchoPuzzle
 
         private void AwakeInternal()
         {
+            // ★★ 实体球整只放到 Ignore Raycast 层 ★★
+            //
+            //   需求："声波光带和怪物子弹根本不会命中怪物球体 —— 两者根本不会发生碰撞判定"。
+            //   不是打到之后再绕开，而是**这些射线压根就看不到它**。
+            //
+            //   怪物身上唯一的物理形状就是下面这个 CharacterController，
+            //   射线挡不挡它，只看它在哪个层。放到第 2 层
+            //   （Unity 内置的 Physics.IgnoreRaycastLayer）之后：
+            //     · 声波射线用的是 ~((1<<2)|(1<<4)|(1<<5))，第 2 层不在掩码里 -> 一条都打不到；
+            //     · 怪物子弹的 SphereCast 用同一个掩码 -> 同样永远不会命中它；
+            //     · 怪物自己的光带探测也是这个掩码 -> 光带可以互相穿过。
+            //
+            //   ★ 只是"射线看不见"，物理碰撞一点没变：
+            //     层碰撞矩阵是另一套东西，墙 / 玩家照样挡得住它（矩阵默认全开）。
+            //   ★ 只改根节点：黑球网格在子物体 Body 上，仍留在默认层，相机照常渲染。
+            //
+            //   ★ 这里写的是层**索引** 2（内置的 "Ignore Raycast"），
+            //     不是 Physics.IgnoreRaycastLayer —— 那个常量是"掩码"值 4，
+            //     直接赋给 gameObject.layer 会变成 Water 层。
+            gameObject.layer = 2;
+
             m_Controller = GetComponent<CharacterController>();
             if (m_Controller != null)
             {
@@ -1460,6 +1481,26 @@ namespace EchoPuzzle
         [System.NonSerialized] public bool DungeonMoveControlled;
 
         /// <summary>
+        /// ★ 站桩：true = 这一只永不移动（仍会转向、发光带、开火）。boss 专用。
+        /// 由 MonsterWaveManager.SpawnBoss 置位，普通怪 / 探秘模式恒为 false。
+        /// </summary>
+        [System.NonSerialized] public bool dungeonHoldPosition;
+
+        /// <summary>
+        /// 【地牢模式】玩家子弹打这只怪时，受击圆柱的高度（米）。0 = 用子弹自带的默认高度。
+        /// boss 球心在 4 米，弹道在 1.15 米，所以要单独给它一个更高的判定圆柱。
+        /// 由 MonsterWaveManager.SpawnBoss 置位，普通怪恒为 0。
+        /// </summary>
+        [System.NonSerialized] public float dungeonHurtHeight;
+
+        /// <summary>
+        /// 【地牢模式】玩家子弹打这只怪时，受击圆柱的水平半径（米）。0 = 用子弹自带的默认半径。
+        /// boss 球半径 1.5，比普通怪的 1 米圆柱大，所以单独给它覆盖成 2。
+        /// 由 MonsterWaveManager.SpawnBoss 置位，普通怪恒为 0。
+        /// </summary>
+        [System.NonSerialized] public float dungeonHurtRadius;
+
+        /// <summary>
         /// 【地牢模式】由 DungeonEnemy 设置巡逻 / 射击目标点。
         /// 写入 m_Target / m_StopPoint，后续 MoveTowardTarget 会朝它走（NavMesh 寻路）。
         /// </summary>
@@ -1510,6 +1551,16 @@ namespace EchoPuzzle
         /// </summary>
         private void UpdateHoverOnly()
         {
+            // ★ 站桩的 boss（BossMandala）：高度由刷怪时设定的位置固定住，
+            //   **不**跑重力 / 悬浮 —— 否则它会自己往下掉。
+            //   需求："boss 的刷新高度固定在 y = 4"。
+            if (dungeonHoldPosition)
+            {
+                m_IsMoving = false;
+                m_WantMove = false;
+                return;
+            }
+
             float vertical = ApplyGravityAndHover();
 
             Vector3 move = Vector3.up * (vertical * Time.deltaTime);
@@ -1635,8 +1686,16 @@ namespace EchoPuzzle
                 // 先决定"往哪走"（会调 DungeonSetMoveTarget / DungeonClearMoveTarget）
                 m_DungeonEnemy.PatrolTick(now);
 
-                // 再真正移动（朝 DungeonSetMoveTarget 写进去的 m_StopPoint 走）
-                MoveTowardTarget();
+                // ★ 站桩怪（boss）：不执行移动，顺便把声波诱饵写进来的目标点清掉
+                if (dungeonHoldPosition)
+                {
+                    if (DungeonHasMoveTarget) DungeonClearMoveTarget();
+                }
+                else
+                {
+                    // 再真正移动（朝 DungeonSetMoveTarget 写进去的 m_StopPoint 走）
+                    MoveTowardTarget();
+                }
 
                 // 移动完再判断开火（视线用当前帧的位置算）
                 m_DungeonEnemy.CombatTick(now);
@@ -3478,10 +3537,26 @@ namespace EchoPuzzle
 
             Vector3 pos = transform.position;
 
-            if (TryGetGroundY(out float groundY))
+            bool hasGround = TryGetGroundY(out float groundY);
+
+            if (hasGround)
                 pos.y = groundY + FootSonarLift;
             else
                 pos.y -= floatHeight;      // 探不到地面时的退路：球心往下 floatHeight
+
+            // ★★ 地牢模式：光带必须留在地板**顶面之上** ★★
+            //
+            //   地牢的地板是 1×1×1 的立方体，**中心 y = 0**，
+            //   所以地板顶面在 y = 0.5（地板占 -0.5 ~ +0.5）——
+            //   "y = 0.04" 这个贴地高度其实是在地板**里面**。
+            //   光带一旦生在地板内部，水平环就会在 1×1 的方块里来回反射，
+            //   看起来就是"一圈光带困在 boss 中心的小方块里"。
+            //   所以地牢模式下至少抬到顶面上方 0.1（= 0.6）。
+            if (GameUI.IsDungeonMode)
+            {
+                float minY = hasGround ? groundY + 0.1f : 0.6f;
+                pos.y = Mathf.Max(pos.y, minY, 0.6f);
+            }
 
             // ★ 按模式选参数：
             //     · 地牢模式 -> dungeonDeathSonar（独立一套，可单独调）
@@ -3492,6 +3567,26 @@ namespace EchoPuzzle
                 set = dungeonDeathSonar;
             else
                 set = useCustomRemoveSonar ? removeSonar : killSonar;
+
+            // ★★ 体型越大，死亡光带按比例放大 ★★
+            //
+            //   地牢这套参数是照抄普通怪物的：range 6 / lifetime 0.2 / speed 12
+            //   —— 实际只能铺出半径约 2.4 米的一圈。
+            //   对半径 1.5 米的 boss 来说这圈几乎全被自己的实体球压住，
+            //   在 35×35 的 boss 房里基本看不出来，观感上就"像没做"。
+            //   按 bodyRadius / 普通怪半径(0.5) 的倍数等比放大，boss 就得到一圈约 7 米的光带。
+            float sizeK = Mathf.Clamp(bodyRadius / 0.5f, 1f, 4f);
+
+            if (sizeK > 1.01f)
+            {
+                set.range      *= sizeK;
+                set.lifetime   *= sizeK;
+                set.tailLinger *= sizeK;
+
+                set.rayCount90 = Mathf.Clamp(Mathf.RoundToInt(set.rayCount90 * sizeK), 0, 480);
+                set.rayCount30 = Mathf.Clamp(Mathf.RoundToInt(set.rayCount30 * sizeK), 0, 480);
+                set.rayCount60 = Mathf.Clamp(Mathf.RoundToInt(set.rayCount60 * sizeK), 0, 480);
+            }
 
             EmitParams p = set.ToEmitParams(Vector3.forward);
 

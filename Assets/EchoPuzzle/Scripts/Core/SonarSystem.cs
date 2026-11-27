@@ -625,17 +625,18 @@ namespace EchoPuzzle
             // 方位角的 0° 起点 = p.referenceDir（玩家正前方的水平分量），
             // 所以每层都"相对正前方偏转半格"，玩家转身图案跟着转。
             Vector3 refDir = p.referenceDir;
+            float phase = PickRingPhase(axis, refDir, p);
 
-            AddRing(wave, position, axis, refDir, 90f, p.rayCount90,     false);
-            AddRing(wave, position, axis, refDir, 30f, p.rayCount30,     false);
-            AddRing(wave, position, axis, refDir, 60f, p.rayCount60,     false);
-            AddRing(wave, position, axis, refDir, 15f, p.diffuseCount15, true);
-            AddRing(wave, position, axis, refDir, 45f, p.diffuseCount45, true);
-            AddRing(wave, position, axis, refDir, 75f, p.diffuseCount75, true);
+            AddRing(wave, position, axis, refDir, 90f, p.rayCount90,     false, phase);
+            AddRing(wave, position, axis, refDir, 30f, p.rayCount30,     false, phase);
+            AddRing(wave, position, axis, refDir, 60f, p.rayCount60,     false, phase);
+            AddRing(wave, position, axis, refDir, 15f, p.diffuseCount15, true, phase);
+            AddRing(wave, position, axis, refDir, 45f, p.diffuseCount45, true, phase);
+            AddRing(wave, position, axis, refDir, 75f, p.diffuseCount75, true, phase);
 
             // 与六层**并行**的另一路：整个上半球面采样。
             // 同样以脚下地面法线为轴，所以斜坡上会和六层一起倾斜。
-            AddHemisphere(wave, position, axis, refDir, p.hemisphereCount, p.hemisphereDiffuse);
+            AddHemisphere(wave, position, axis, refDir, p.hemisphereCount, p.hemisphereDiffuse, phase);
 
             m_Waves.Add(wave);
         }
@@ -648,13 +649,13 @@ namespace EchoPuzzle
         /// 也共用同一个方位角起点 <paramref name="referenceDir"/>。
         /// </summary>
         private void AddHemisphere(Wave wave, Vector3 origin, Vector3 axis,
-                                   Vector3 referenceDir, int count, bool diffuse)
+                                   Vector3 referenceDir, int count, bool diffuse, float phaseDeg)
         {
             if (count <= 0) return;
 
             for (int i = 0; i < count; i++)
             {
-                Vector3 dir = DirectionOnHemisphere(axis, referenceDir, i, count);
+                Vector3 dir = DirectionOnHemisphere(axis, referenceDir, i, count, phaseDeg);
 
                 wave.Pending.Add(new Node
                 {
@@ -676,13 +677,13 @@ namespace EchoPuzzle
         /// 方位角起点 = <paramref name="referenceDir"/>。diffuse = 漫反射类标记。
         /// </summary>
         private void AddRing(Wave wave, Vector3 origin, Vector3 axis, Vector3 referenceDir,
-                             float elevDeg, int count, bool diffuse)
+                             float elevDeg, int count, bool diffuse, float phaseDeg)
         {
             if (count <= 0) return;
 
             for (int i = 0; i < count; i++)
             {
-                Vector3 dir = DirectionOnRing(axis, referenceDir, elevDeg, i, count);
+                Vector3 dir = DirectionOnRing(axis, referenceDir, elevDeg, i, count, phaseDeg);
 
                 wave.Pending.Add(new Node
                 {
@@ -697,6 +698,69 @@ namespace EchoPuzzle
                     isDiffuse  = diffuse,
                 });
             }
+        }
+
+        private static float PickRingPhase(Vector3 axis, Vector3 referenceDir, EmitParams p)
+        {
+            int[] counts = { p.rayCount90, p.rayCount30, p.rayCount60,
+                             p.diffuseCount15, p.diffuseCount45, p.diffuseCount75 };
+
+            float stepMin = float.MaxValue;
+
+            for (int i = 0; i < counts.Length; i++)
+            {
+                if (counts[i] <= 0) continue;
+
+                stepMin = Mathf.Min(stepMin, 360f / counts[i]);
+            }
+
+            if (stepMin > 180f) return 0f;
+
+            BuildTangentBasis(axis, referenceDir, out Vector3 t1, out Vector3 t2);
+            float baseAz = Mathf.Atan2(t1.x, t1.z) * Mathf.Rad2Deg;
+
+            float[] fracs = { 0f, 0.5f, 0.25f, 0.75f, 0.125f, 0.625f, 0.375f, 0.875f };
+
+            float bestDelta = 0f;
+            float bestGap   = -1f;
+
+            for (int f = 0; f < fracs.Length; f++)
+            {
+                float delta = fracs[f] * stepMin;
+                float gap   = MinCardinalGap(baseAz, delta, counts);
+
+                if (gap > bestGap + 1e-4f)
+                {
+                    bestGap   = gap;
+                    bestDelta = delta;
+                }
+            }
+
+            return bestDelta;
+        }
+
+        private static float MinCardinalGap(float baseAz, float delta, int[] counts)
+        {
+            float minGap = 90f;
+
+            for (int c = 0; c < counts.Length; c++)
+            {
+                int count = counts[c];
+
+                if (count <= 0) continue;
+
+                float step = 360f / count;
+
+                for (int i = 0; i < count; i++)
+                {
+                    float m   = Mathf.Repeat(baseAz + delta + (i + 0.5f) * step, 90f);
+                    float gap = Mathf.Min(m, 90f - m);
+
+                    if (gap < minGap) minGap = gap;
+                }
+            }
+
+            return minGap;
         }
 
         /// <summary>检测脚下地面法线：从位置上方一点点向下打一条短射线。失败时回退世界向上。</summary>
@@ -1003,7 +1067,7 @@ namespace EchoPuzzle
         /// 方位角的 0° 由 <paramref name="referenceDir"/> 决定（见 BuildTangentBasis）。
         /// </summary>
         private static Vector3 DirectionOnHemisphere(Vector3 axis, Vector3 referenceDir,
-                                                     int index, int total)
+                                                     int index, int total, float phaseDeg)
         {
             if (total <= 1) return axis.sqrMagnitude > 1e-6f ? axis.normalized : Vector3.up;
 
@@ -1014,7 +1078,7 @@ namespace EchoPuzzle
             float k     = (index + 0.5f) / total;
             float cosT  = Mathf.Sqrt(1f - k);          // 余弦权重
             float sinT  = Mathf.Sqrt(Mathf.Max(0f, 1f - cosT * cosT));
-            float theta = Mathf.PI * (1f + Mathf.Sqrt(5f)) * (index + 0.5f);
+            float theta = Mathf.PI * (1f + Mathf.Sqrt(5f)) * (index + 0.5f) + phaseDeg * Mathf.Deg2Rad;
 
             return (n * cosT + t1 * (sinT * Mathf.Cos(theta)) + t2 * (sinT * Mathf.Sin(theta))).normalized;
         }
@@ -1029,14 +1093,16 @@ namespace EchoPuzzle
         /// count 小于等于 1 时只有一条，落在 180° 方位角。
         /// </summary>
         private static Vector3 DirectionOnRing(Vector3 axis, Vector3 referenceDir,
-                                                float elevationDeg, int index, int count)
+                                                float elevationDeg, int index, int count, float phaseDeg)
         {
             Vector3 n = axis.sqrMagnitude > 1e-6f ? axis.normalized : Vector3.up;
 
             BuildTangentBasis(n, referenceDir, out Vector3 t1, out Vector3 t2);
 
             float elev = elevationDeg * Mathf.Deg2Rad;
-            float phi  = count <= 1 ? Mathf.PI : (index + 0.5f) / count * Mathf.PI * 2f;
+            float phi  = count <= 1
+                       ? Mathf.PI + phaseDeg * Mathf.Deg2Rad
+                       : (index + 0.5f) / count * Mathf.PI * 2f + phaseDeg * Mathf.Deg2Rad;
 
             float cosT = Mathf.Cos(elev);
             float sinT = Mathf.Sin(elev);

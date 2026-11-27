@@ -55,7 +55,7 @@ namespace EchoPuzzle.Dungeon
 
         [Header("开火")]
         [Tooltip("两次齐射之间的基础间隔（秒）。\n\n" +
-                 "★ 需求：减少 1 秒 —— 原来是 4，现在 3。")]
+                 "★ 当前值为 2 秒；实际间隔还会乘 0.5~1.5 的随机系数。")]
         [Min(0.2f)] public float fireInterval = 2f;
 
         [Tooltip("★ 每次开火前的「蓄力」停顿（秒）。需求：1 秒\n\n" +
@@ -129,6 +129,12 @@ namespace EchoPuzzle.Dungeon
         ///       下面所有动作会立即停止
         /// </summary>
         [System.NonSerialized] public int DungeonPlayerFound;
+
+        /// <summary>
+        /// ★ 站桩：true = 永不移动，但照常做视线检测与开火（boss 用）。
+        /// 由 MonsterWaveManager.SpawnBoss 在刷出时置位，普通怪保持 false。
+        /// </summary>
+        [System.NonSerialized] public bool holdPosition;
 
         // ---------------------------------------------------------------- 视线
 
@@ -308,6 +314,27 @@ namespace EchoPuzzle.Dungeon
             // found == 1：每帧刷新玩家实时坐标（开火要用）
             // ---------------------------------------------------------------
             UpdatePlayerPos();
+
+            // ---------------------------------------------------------------
+            // ★ 站桩模式（boss）：不挪窝，但照样判定视线并开火 ★
+            //
+            //   只跳过"找射击位 / 朝玩家靠"这一整套移动状态机，
+            //   m_Firing 仍然每帧按视线重新算，CombatTick 照常走。
+            // ---------------------------------------------------------------
+            if (holdPosition)
+            {
+                if (m_Monster.DungeonHasMoveTarget)
+                    m_Monster.DungeonClearMoveTarget();
+
+                m_Moving          = false;
+                m_MoveIsSightSpot = false;
+                m_Pausing         = false;
+                m_PauseTimer      = 0f;
+
+                RefreshSnapshot();
+                m_Firing = CheckLineOfSight();
+                return;
+            }
 
             // ---------------------------------------------------------------
             // 停顿中：计时结束 -> 刷新快照点 -> 视线检测 -> A / B
@@ -674,7 +701,7 @@ namespace EchoPuzzle.Dungeon
 
                     m_NextFireTime = now + fireInterval * Random.Range(0.5f, 1.5f);
 
-                    // ★★ 怪物技能系统：随机触发一个主动技能（弹幕扫射是其中之一）★★
+                    // ★★ 怪物技能系统：按模板技能池触发主动技能（弹幕扫射是其中之一）★★
                     TriggerSkill();
                 }
 
@@ -695,12 +722,13 @@ namespace EchoPuzzle.Dungeon
 
             m_NextFireTime = now + fireInterval * Random.Range(0.5f, 1.5f);
 
-            // ★★ 怪物技能系统：随机触发一个主动技能 ★★
+            // ★★ 怪物技能系统：按模板技能池触发主动技能 ★★
             TriggerSkill();
         }
 
         /// <summary>
-        /// 触发随机主动技能（无技能组件时兜底为普通弹幕扫射）。
+        /// 从当前模板的技能池随机触发主动技能（第 11 层起一次触发两个）；
+        /// 无技能组件时兜底为普通弹幕扫射。
         /// </summary>
         private void TriggerSkill()
         {
@@ -732,6 +760,9 @@ namespace EchoPuzzle.Dungeon
 
         // ---------------------------------------------------------------- 开火实现
 
+        /// <summary>普通怪物子弹的出膛高度（世界 y）= 地板顶面 0.5 + 悬浮高度 2。</summary>
+        private const float NormalMonsterMuzzleY = 2.5f;
+
         /// <summary>
         /// 弹幕扫射（怪物主动技能之一）。
         /// ★ public：DungeonMonsterSkills 也会调用它。
@@ -743,8 +774,20 @@ namespace EchoPuzzle.Dungeon
             Vector3 toAim = aim - eye;
             if (toAim.sqrMagnitude < 0.01f) return;
 
-            // 枪口放在身体外一点，避免子弹一出生就打到自己
-            Vector3 muzzle = eye + toAim.normalized * 0.8f;
+            // ★ 枪口 = 怪物球心（x / z 都用球心）
+            //
+            //   需求："怪物子弹应当从怪物的圆心处生成"。
+            //   ★ 子弹和怪物完全不碰撞（见 MonsterBulletRenderer.FlyTick），
+            //     所以生在球心不会被自己挡住，也不会卡在体内。
+            Vector3 muzzle = eye;
+
+            // ★ 出膛高度统一按**普通怪物**的枪口高度来。
+            //
+            //   普通怪：球心 = 地板顶面(0.5) + 悬浮高度(2) = 2.5，子弹就从 2.5 出膛。
+            //   boss（holdPosition）球心被固定在 4 米，如果也从球心发，
+            //   它的子弹就会比普通怪高 1.5 米 —— 所以这里把 y 压到同一个 2.5。
+            if (holdPosition) muzzle.y = NormalMonsterMuzzleY;
+
             Vector3 baseDir = (aim - muzzle).normalized;
 
             for (int i = 0; i < bulletsPerVolley; i++)

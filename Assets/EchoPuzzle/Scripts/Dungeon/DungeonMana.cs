@@ -22,10 +22,10 @@ namespace EchoPuzzle.Dungeon
 
         [Header("容量")]
         [Tooltip("蓝量上限。★ 支持小数（保留三位）")]
-        [Min(1f)] public float maxMana = 200f;
+        [Min(1f)] public float maxMana = 400f;
 
         [Tooltip("开局蓝量。重开一局（ResetMana）也会回到这个值。★ 支持小数（保留三位）")]
-        [Min(0f)] public float startMana = 200f;
+        [Min(0f)] public float startMana = 400f;
 
         /// <summary>
         /// 当前蓝量。

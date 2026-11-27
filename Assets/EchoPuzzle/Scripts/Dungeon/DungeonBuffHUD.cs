@@ -25,8 +25,9 @@ namespace EchoPuzzle.Dungeon
     public sealed class DungeonBuffHUD : MonoBehaviour
     {
         [Header("位置（1080 高度基准的像素）")]
-        [Tooltip("第一行文字的位置。默认在蓝条（y = 96，高 10）下面")]
-        public Vector2 origin = new Vector2(73f, 216f);
+        [Tooltip("第一行文字的位置。在蓝条（y = 228，高 20）下面")]
+        // ★ 需求：盾条移到血条下方后，这里也跟着下移一行（216 -> 278）
+        public Vector2 origin = new Vector2(73f, 265f);
 
         [Tooltip("行间距")]
         [Min(10f)] public float lineHeight = 47f;
@@ -78,6 +79,22 @@ namespace EchoPuzzle.Dungeon
             }
         }
 
+        /// <summary>
+        /// 取插件的「效果显示名」（不含颜色前缀、不含数值）。
+        ///
+        /// ★ 用 def.effectName 拼出来，这样紫/橙同一个效果会显示成同一个名字，
+        ///   汇总成「爆炸弹头 lv2」而不是「紫·爆炸弹头」+「橙·爆炸弹头」两行。
+        /// </summary>
+        private static string EffectDisplayName(DungeonBuffDef def)
+        {
+            if (def == null) return "?";
+
+            if (!string.IsNullOrEmpty(def.effectName)) return def.effectName;
+
+            // 兜底：没有 effectName 就用 effectId
+            return string.IsNullOrEmpty(def.effectId) ? def.name : def.effectId;
+        }
+
         /// <summary>把「id -> 层数」整理成一行行文本，并算出当前实际数值。</summary>
         private void Rebuild()
         {
@@ -85,30 +102,77 @@ namespace EchoPuzzle.Dungeon
 
             if (m_State != null)
             {
-                // ★ 现在是"一种 buff 一个实例 + 等级"，不需要再去重
-                for (int i = 0; i < m_State.Owned.Count; i++)
+                // ★★ 只列「当前模板已装备的紫色 + 橙色插件」，按效果汇总、不看颜色 ★★
+                //
+                //   需求："左侧 buff 列表 hud 里不会再把所有 buff 都列出来，
+                //         只会列出当前模板已经装备的紫色和橙色插件
+                //         （注意模板是可以按 E 切换的），而且只看总数不看颜色，
+                //         格式为「xxxx lvx」。
+                //         比如：一个紫色爆炸弹头 + 一个橙色爆炸弹头 -> 「爆炸弹头 lv2」
+                //         其他什么都不会写。"
+                //
+                //   ★ 按 effectId 汇总（跨颜色合并），层数 = 当前模板里该效果的个数。
+                //   ★ 模板由 DungeonBuffState.ActiveTemplate 决定，按 E 切换后
+                //     Recompute() 会触发 Changed，本 HUD 会自动重算。
+                var seenEffects = new List<string>();
+
+                int tmpl = m_State.ActiveTemplate;
+
+                // 遍历当前模板的六个颜色槽，只关心紫 / 橙
+                for (int c = 0; c < SlotRules.ColorCount; c++)
                 {
-                    BuffInstance inst = m_State.Owned[i];
-                    if (inst == null || inst.def == null) continue;
+                    var color = (PluginColor)c;
 
-                    // 插槽里没装（不在当前模板）的插件标一下，免得玩家以为没生效
-                    bool equipped = m_State.CountInTemplate(m_State.ActiveTemplate, inst) > 0;
+                    if (color != PluginColor.Purple && color != PluginColor.Orange) continue;
 
-                    m_Lines.Add(equipped
-                        ? $"{inst.Name} Lv{inst.level}"
-                        : $"{inst.Name} Lv{inst.level}（未装备）");
+                    var list = m_State.SlotsOf(tmpl, color);
+                    if (list == null) continue;
+
+                    for (int i = 0; i < list.Count; i++)
+                    {
+                        BuffInstance inst = list[i];
+                        if (inst == null || inst.def == null) continue;
+
+                        // ★ EffectKeyOf 是静态方法，必须用类名调（不能走实例）
+                        string key = DungeonBuffState.EffectKeyOf(inst.def);
+                        if (string.IsNullOrEmpty(key)) continue;
+                        if (seenEffects.Contains(key)) continue;
+
+                        seenEffects.Add(key);
+
+                        // ★ 等级 = 当前模板里这个效果的总个数（跨颜色相加）
+                        int lv = m_State.EquippedEffectCount(tmpl, key);
+                        if (lv <= 0) continue;
+
+                        m_Lines.Add($"{EffectDisplayName(inst.def)} lv{lv}");
+                    }
                 }
             }
 
             // ---- 当前实际数值 ----
             DungeonWeapon w = DungeonWeapon.Instance;
-            DungeonMana   m = DungeonMana.Instance;
 
             if (w != null)
             {
-                string manaPart = m != null ? $"{m.Current}/{m.Max}" : "?";
-                m_StatsLine = $"伤害 {w.EffectiveDamage}　射速 {w.EffectiveShotsPerSecond:F1}/秒　" +
-                              $"蓝耗 {w.EffectiveManaCost}　回蓝 {w.EffectiveKillMana}　蓝量 {manaPart}";
+                // ★ 「蓝量」已从这行去掉：蓝条本身就在 HUD 上，重复显示没意义。
+                //   所以这里也不再需要 DungeonMana 的引用。
+
+                // ★ 射速同时显示「倍率」和「每秒几发」：
+                //   只看发/秒会误以为没封顶（封顶是倍率 ×8 = 16 发/秒）。
+                //   倍率达到 8 时标「封顶」，并把溢出的伤害/蓝耗也标出来。
+                float rawRate = w.RawFireRateMul;
+                bool  capped  = rawRate > DungeonWeapon.MaxFireRateMul + 0.001f;
+
+                string rateText = capped
+                    ? $"×{w.EffectiveFireRateMul}(封顶) {w.EffectiveShotsPerSecond:F1}/秒"
+                    : $"×{rawRate:F2} {w.EffectiveShotsPerSecond:F1}/秒";
+
+                string overflowText = capped
+                    ? $"溢出 伤害×{w.OverflowDamageMul} 蓝耗×{w.OverflowManaCostMul}　"
+                    : "";
+
+                m_StatsLine = $"伤害 {w.EffectiveDamage}　射速 {rateText}　" +
+                              $"蓝耗 {w.EffectiveManaCost}　回蓝 {w.EffectiveKillMana}　{overflowText}";
             }
             else
             {

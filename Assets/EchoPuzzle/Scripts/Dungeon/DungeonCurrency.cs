@@ -25,7 +25,7 @@ namespace EchoPuzzle.Dungeon
 
         [Header("开局")]
         [Tooltip("开局携带的金币。重开一局也回到这个值")]
-        [Min(0)] public int startGold;
+        [Min(0)] public int startGold = 20;
 
         /// <summary>当前金币。</summary>
         public int Gold { get; private set; }

@@ -758,16 +758,18 @@ namespace EchoPuzzle
             float now = Time.timeSinceLevelLoad;
 
             Camera  cam = Camera.main;
-            Vector3 camPos, camUp;
+            Vector3 camPos, camUp, camFwd;
             if (cam != null)
             {
                 camPos = cam.transform.position;
                 camUp  = cam.transform.up;
+                camFwd = cam.transform.forward;
             }
             else
             {
                 camPos = Vector3.zero;
                 camUp  = Vector3.up;
+                camFwd = Vector3.down;
             }
 
             float fade      = Mathf.Max(0.01f, fadeSpeed);
@@ -881,7 +883,7 @@ namespace EchoPuzzle
                 ZoneProbe probe = default;
 
                 quads += BuildTrail(tr, localTail, localHead, trHalfWidth, fade,
-                                    now, tr.spawnTime, maxTravel, camPos, camUp, quads,
+                                    now, tr.spawnTime, maxTravel, camPos, camUp, camFwd, quads,
                                     ref probe);
             }
 
@@ -929,7 +931,7 @@ namespace EchoPuzzle
         /// </summary>
         private int BuildTrail(SonarTrail tr, float tail, float head, float halfWidth,
                                float fade, float now, float spawnTime, float maxTravel,
-                               Vector3 camPos, Vector3 camUp, int quadsSoFar,
+                               Vector3 camPos, Vector3 camUp, Vector3 camFwd, int quadsSoFar,
                                ref ZoneProbe probe)
         {
             Vector3 origin = tr.origin;
@@ -937,14 +939,12 @@ namespace EchoPuzzle
             Vector3 flat    = origin + dir * tail;
             Vector3 flatEnd = origin + dir * head;
 
-            // 面向相机 45° 的四边形：一条边向上，一条边指向相机。
-            // 两者都不是相机右向量，所以无论声波朝哪飞、视角怎么变，
-            // 光带在屏幕上的投影宽度都大致恒定。
             Vector3 toCam = camPos - flat;
             if (toCam.sqrMagnitude < 1e-6f) toCam = camUp;
             toCam.Normalize();
 
-            Vector3 up = camUp - dir * Vector3.Dot(camUp, dir);
+            Vector3 up = Vector3.Cross(dir, camFwd);
+            if (up.sqrMagnitude < 1e-4f) up = Vector3.Cross(dir, camUp);
             if (up.sqrMagnitude < 1e-4f) up = Vector3.up - dir * Vector3.Dot(Vector3.up, dir);
             if (up.sqrMagnitude < 1e-4f) up = Vector3.right;
             up.Normalize();

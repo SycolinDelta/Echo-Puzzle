@@ -2199,6 +2199,14 @@ namespace EchoPuzzle
 
             Time.timeScale = 1f;
 
+            // ★★ 进地牢模式默认是「普通闯关」★★
+            //
+            //   上一次可能是 boss 挑战（BossChallenge 是静态字段，跨场景保留），
+            //   从主页重新进来时必须复位，否则会莫名其妙还是 Z-B-Y 那张图。
+            //   之后点「boss挑战」按钮会再把它设回 true。
+            if (sceneName == DungeonSceneName)
+                EchoPuzzle.Dungeon.DungeonMapGenerator.BossChallenge = false;
+
             // ★ 新场景里的 GameUI 会读到这个标志，直接进 Playing
             s_AutoStartOnLoad = true;
 
@@ -2213,8 +2221,26 @@ namespace EchoPuzzle
             DrawTitle("ECHO PUZZLE", cx, w, y);
             y += titleToButtons;
 
-            if (DrawButton("新游戏", cx, w, y)) StartGame();
-            y += buttonSpacing;
+            // ★★ 地牢模式：开局菜单是「普通闯关 / boss 挑战」两个按钮 ★★
+            //
+            //   需求："将 DungeonMode 场景的'新游戏'按钮去掉，改成
+            //         '普通闯关''boss挑战'两个按钮。"
+            //   · 普通闯关：照常触发原本点新游戏后触发的游戏内容（随机布局）
+            //   · boss挑战：同样走 DungeonMapGenerator 建图，但分块矩阵固定
+            //               a11=Z / a21=B / a31=Y
+            if (IsDungeonMode)
+            {
+                if (DrawButton("普通闯关", cx, w, y)) BeginDungeonRun(false);
+                y += buttonSpacing;
+
+                if (DrawButton("boss挑战", cx, w, y)) BeginDungeonRun(true);
+                y += buttonSpacing;
+            }
+            else
+            {
+                if (DrawButton("新游戏", cx, w, y)) StartGame();
+                y += buttonSpacing;
+            }
 
             // 有存档时才显示"加载存档"。
             // ★ 地牢模式不能存档，也就不显示它 ——
@@ -2226,6 +2252,20 @@ namespace EchoPuzzle
             }
 
             if (DrawButton("返回主页", cx, w, y)) ReturnHome();
+        }
+
+        /// <summary>
+        /// 【地牢模式】从开局菜单选挑战模式并开始。
+        ///
+        /// ★ 先让地图生成器切到对应布局，再走原来的 StartGame 流程
+        ///   （开局自选强化、进入 Playing 等一行都不改）。
+        /// </summary>
+        private void BeginDungeonRun(bool bossChallenge)
+        {
+            var gen = FindObjectOfType<EchoPuzzle.Dungeon.DungeonMapGenerator>();
+            if (gen != null) gen.BeginRun(bossChallenge);
+
+            StartGame();
         }
 
         private void DrawPause(float cx, float w)

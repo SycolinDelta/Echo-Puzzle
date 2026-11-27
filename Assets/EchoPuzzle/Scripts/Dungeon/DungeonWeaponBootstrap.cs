@@ -76,6 +76,9 @@ namespace EchoPuzzle.Dungeon
             root.AddComponent<BulletBlastRenderer>();
             root.AddComponent<HandBladeLineRenderer>();
 
+            // 槽位增加时的文字提示（屏幕中间偏上，白字黑边）
+            root.AddComponent<DungeonSlotToastUI>();
+
 
         }
     }

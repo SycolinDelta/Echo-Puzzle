@@ -51,6 +51,7 @@ namespace EchoPuzzle.Dungeon
         //
         //       Y（出生房） -> TemplateYA            含 8 = 玩家出生点
         //       A（怪物房） -> TemplateAA / AB / AC  含 3 = 怪物区
+        //       B（boss 房）-> TemplateBA            含 3 = 怪物区（只刷一只 boss）
         //       Z（终点房） -> TemplateZA            含 9 = 下一层
         //
         //   ★ 所以不能说「A 等于 A」—— A 等于 AA 或 AB 或 AC。
@@ -96,6 +97,13 @@ namespace EchoPuzzle.Dungeon
 
         /// <summary>大矩阵的列数（Z 轴）= 35 × 4 = 140。</summary>
         public const int ColsZ = ModuleSize * GridCols;
+
+        /// <summary>
+        /// boss 房（字母 "B"）里 boss 的固定落点——**模板矩阵第 18 行 18 列**。
+        ///
+        /// ★ 模板 35 × 35 的 3 区是 x=2..33 / z=2..33，18 正好是房间正中。
+        /// </summary>
+        public const int BossAnchorLocal = 18;
 
         /// <summary>
         /// 【模板 Z】终点房（含 9 = 下一层）。
@@ -397,7 +405,52 @@ namespace EchoPuzzle.Dungeon
             /* x=34 */ { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 1, 1, 4, 1, 1, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
         };
 
-        public static readonly int[,] TemplateAC = new int[ModuleSize, ModuleSize]
+public static readonly int[,] TemplateAC = new int[ModuleSize, ModuleSize]
+        {
+            /* x= 0 */ { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 1, 1, 4, 1, 1, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
+            /* x= 1 */ { 0, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 4, 4, 4, 4, 4, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 0 },
+            /* x= 2 */ { 0, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 2, 0 },
+            /* x= 3 */ { 0, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 2, 0 },
+            /* x= 4 */ { 0, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 2, 0 },
+            /* x= 5 */ { 0, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 2, 0 },
+            /* x= 6 */ { 0, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 2, 0 },
+            /* x= 7 */ { 0, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 2, 0 },
+            /* x= 8 */ { 0, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 2, 0 },
+            /* x= 9 */ { 0, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 2, 0 },
+            /* x=10 */ { 0, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 2, 0 },
+            /* x=11 */ { 0, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 2, 0 },
+            /* x=12 */ { 0, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 2, 0 },
+            /* x=13 */ { 0, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 2, 0 },
+            /* x=14 */ { 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 2, 2 },
+            /* x=15 */ { 1, 4, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 1 },
+            /* x=16 */ { 1, 4, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 1 },
+            /* x=17 */ { 4, 4, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 4 },
+            /* x=18 */ { 1, 4, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 1 },
+            /* x=19 */ { 1, 4, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 1 },
+            /* x=20 */ { 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 2, 2 },
+            /* x=21 */ { 0, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 2, 0 },
+            /* x=22 */ { 0, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 2, 0 },
+            /* x=23 */ { 0, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 2, 0 },
+            /* x=24 */ { 0, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 2, 0 },
+            /* x=25 */ { 0, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 2, 0 },
+            /* x=26 */ { 0, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 2, 0 },
+            /* x=27 */ { 0, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 2, 0 },
+            /* x=28 */ { 0, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 2, 0 },
+            /* x=29 */ { 0, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 2, 0 },
+            /* x=30 */ { 0, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 2, 0 },
+            /* x=31 */ { 0, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 2, 0 },
+            /* x=32 */ { 0, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 2, 0 },
+            /* x=33 */ { 0, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 4, 4, 4, 4, 4, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 0 },
+            /* x=34 */ { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 1, 1, 4, 1, 1, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
+        };
+
+        /// <summary>
+        /// 【模板 B】boss 房（含 3 = 怪物区；这片区域触发怪物潮时只刷一只 boss）。
+        ///
+        /// ★ 内容与 TemplateAC 完全一致（同一份 35 × 35 副本）。
+        /// ★ 只是挂到字母 "B" 下面，供 "boss 挑战" 布局使用。
+        /// </summary>
+        public static readonly int[,] TemplateBA = new int[ModuleSize, ModuleSize]
         {
             /* x= 0 */ { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 1, 1, 4, 1, 1, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
             /* x= 1 */ { 0, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 4, 4, 4, 4, 4, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 0 },
@@ -670,16 +723,17 @@ namespace EchoPuzzle.Dungeon
         //   ── 字母含义（当前） ──────────────────────────────────────
         //     Y = 出生房  -> TemplateYA                （模板里有数字 8）
         //     A = 怪物房  -> TemplateAA / AB / AC      （模板里有数字 3）
+        //     B = boss 房 -> TemplateBA                （模板里有数字 3，只刷一只 boss）
         //     Z = 终点房  -> TemplateZA                （模板里有数字 9）
         //
         //   ★ 命名规则：
-        //       Y / A / Z         是**字母**（未知量），填在分块矩阵里
-        //       YA / AA / ZA ...  是**具体模板**，挂在某一组下面
+        //       Y / A / B / Z         是**字母**（未知量），填在分块矩阵里
+        //       YA / AA / BA / ZA ... 是**具体模板**，挂在某一组下面
         //     A 可以等于 AA、AB、AC，但**不能说 A 等于 A**。
         /// <summary>
         /// 字母 → 模板矩阵数组（模板池）。
         ///
-        /// ★ key   = 分块矩阵里用的字母（"Y" / "A" / "Z" / 将来新增的...）
+        /// ★ key   = 分块矩阵里用的字母（"Y" / "A" / "B" / "Z" / 将来新增的...）
         /// ★ value = 该字母可用的**所有**模板；每个块独立随机抽一个
         /// </summary>
         private static readonly Dictionary<string, int[][,]> s_TemplatePools
@@ -699,6 +753,9 @@ namespace EchoPuzzle.Dungeon
                 // ---- A：怪物房（模板里有数字 3）----
                 //   ★ 目前有 3 套，后续可以继续往数组里加
                 { "A", new[] { TemplateAA, TemplateAAA, TemplateAAB, TemplateAB, TemplateABA, TemplateABB, TemplateAC, TemplateACA, TemplateACB } },
+
+                // ---- B：boss 房（模板里有数字 3，但这片区域只刷一只 boss）----
+                { "B", new[] { TemplateBA } },
 
                 // ---- Z：终点房（模板里有数字 9）----
                 { "Z", new[] { TemplateZA } },
@@ -1512,6 +1569,7 @@ namespace EchoPuzzle.Dungeon
         /// 建立分块矩阵的布局（随机地图）。
         ///
         /// ★ 会不断重试，直到找到"能连通"的布局 + 门分配。
+        /// ★ BossChallenge 打开时**不随机**：布局固定为 a11=Z / a21=B / a31=Y。
         /// </summary>
         private static void BuildSlots()
         {
@@ -1533,9 +1591,28 @@ namespace EchoPuzzle.Dungeon
             //   这里用一个静态实例 + 递增种子，保证每次重建都不同。
             var rng = NextRng();
 
+            // ★★ boss 挑战：固定布局 ★★
+            //
+            //   需求："在 boss 挑战中不会再将字母随机填入大分块矩阵，
+            //         而是固定在 a11、a21、a31 分别填 Z、B、Y。"
+            //
+            //   a11 = 块 (0, 0)，a21 = 块 (1, 0)，a31 = 块 (2, 0)
+            //   -> 竖着一列：Y(下) -> B(中) -> Z(上)，Y 里是出生点 8，Z 里是下一层 9。
+            Dictionary<Vector2Int, string> fixedLayout = null;
+
+            if (BossChallenge)
+            {
+                fixedLayout = new Dictionary<Vector2Int, string>
+                {
+                    { new Vector2Int(0, 0), "Z" },
+                    { new Vector2Int(1, 0), "B" },
+                    { new Vector2Int(2, 0), "Y" },
+                };
+            }
+
             for (int attempt = 0; attempt < 200; attempt++)
             {
-                Dictionary<Vector2Int, string> lay = RandomLayout(rng);
+                Dictionary<Vector2Int, string> lay = fixedLayout ?? RandomLayout(rng);
                 if (lay == null) { s_FailLayout++; continue; }
 
                 // 每块**独立随机**抽一个模板，并复制一份
@@ -1612,6 +1689,22 @@ namespace EchoPuzzle.Dungeon
             //
             //   纵向一排 Y / A / A / Z，所有相邻门都设为 1。
             //   这样即使随机算法出问题，玩家也一定能玩。
+            // ★ boss 挑战的固定布局理论上不会失败（只有 Z-B、B-Y 两条连接），
+            //   真失败了就用"全开门"的同一套布局兜底，保证还是 Z-B-Y 一列。
+            if (fixedLayout != null)
+            {
+                var fixedSt = new Dictionary<(int, int, int), int>
+                {
+                    { (0, 0, 1), 1 },   // Z 下
+                    { (1, 0, 0), 1 },   // B 上
+                    { (1, 0, 1), 1 },   // B 下
+                    { (2, 0, 0), 1 },   // Y 上
+                };
+
+                BuildExplicitLayout(fixedLayout, fixedSt);
+                return;
+            }
+
             BuildFallbackLayout();
         }
 
@@ -1631,12 +1724,6 @@ namespace EchoPuzzle.Dungeon
                 { new Vector2Int(3, 1), "Z" },
             };
 
-            for (int r = 0; r < GridRows; r++)
-                for (int c = 0; c < GridCols; c++)
-                    s_Slots[r, c] = null;
-
-            s_Layout.Clear();
-
             // 所有块之间的连接一律设成 1
             var st = new Dictionary<(int, int, int), int>
             {
@@ -1648,6 +1735,24 @@ namespace EchoPuzzle.Dungeon
                 { (3, 1, 0), 1 },   // Z 上
             };
 
+            BuildExplicitLayout(lay, st);
+        }
+
+        /// <summary>
+        /// 用**固定布局 + 显式门表**建分块矩阵（不随机、保证可连通）。
+        ///
+        /// ★ 给兜底布局和 boss 挑战共用：
+        ///   门的状态直接由调用方给死，不再走 SolveGates 枚举。
+        /// </summary>
+        private static void BuildExplicitLayout(Dictionary<Vector2Int, string> lay,
+                                                Dictionary<(int, int, int), int> st)
+        {
+            for (int r = 0; r < GridRows; r++)
+                for (int c = 0; c < GridCols; c++)
+                    s_Slots[r, c] = null;
+
+            s_Layout.Clear();
+
             var grids = new Dictionary<Vector2Int, int[,]>();
 
 
@@ -1656,7 +1761,7 @@ namespace EchoPuzzle.Dungeon
 
             foreach (var kv in lay)
             {
-                // 兜底布局用池里的**第一个**模板（不随机，保证可复现）
+                // 固定布局用池里的**第一个**模板（不随机，保证可复现）
                 int[,] srcm = GetTemplate(kv.Value);
                 var copy = new int[ModuleSize, ModuleSize];
                 for (int x = 0; x < ModuleSize; x++)
@@ -1670,7 +1775,7 @@ namespace EchoPuzzle.Dungeon
             var av = new Dictionary<Vector2Int, List<int>>();
             foreach (var kv in lay) av[kv.Key] = AvailDirs(kv.Key, lay);
 
-            // ★ 兜底布局也要记录"开着的出口门"标记
+            // ★ 固定布局也要记录"开着的出口门"标记
             ApplyGates(lay, grids, st, av, origTemplates, recordMarks: true);
 
             foreach (var kv in lay)
@@ -1849,6 +1954,15 @@ namespace EchoPuzzle.Dungeon
         /// <summary>给静态抽模板函数读的调试开关（Inspector 里那个 bool 的镜像）。</summary>
         public static bool DebugForceShopRoom;
 
+        /// <summary>
+        /// 【boss 挑战】true = 分块矩阵固定为 a11=Z / a21=B / a31=Y，不再随机布局。
+        ///
+        /// ★ 由 GameUI 的「boss挑战」按钮在开局前调用 <see cref="BeginRun"/> 设置；
+        ///   一旦设置，整局（包括之后每次切层 / 重新开始）都保持同一挑战模式。
+        /// ★ 静态字段：跨场景加载保留，进 DungeonMode 前就设好。
+        /// </summary>
+        public static bool BossChallenge;
+
         [Tooltip("射入商店格的光带改成什么颜色（默认纯蓝）")]
         public Color shopWaveColor = new Color(0.25f, 0.55f, 1f, 1f);
 
@@ -1905,12 +2019,38 @@ namespace EchoPuzzle.Dungeon
         private bool  m_Fading;
         private bool  m_FadeIn;         // true = 正在淡入（黑 -> 亮）
 
+        /// <summary>
+        /// 地图是否已经完全显示出来（不在淡入/淡出中，且屏幕不黑）。
+        ///
+        /// ★ 给 DungeonSlotToastUI 用：需求要求“进入新一层时的提示
+        ///   要在新一层的地图显示出来之后才显示”。
+        /// </summary>
+        public bool IsMapVisible => !m_Fading && m_FadeAlpha <= 0.001f;
+
         private Texture2D m_Black;
 
         // ------------------------------------------------------------------ 生命周期
 
+        /// <summary>
+        /// 当前场景里的地图生成器（唯一）。
+        ///
+        /// ★ 给 DungeonSlotToastUI 用：要判断“地图是否已经显示出来”，
+        ///   从而把提示文字拖到淡入结束之后才开始显示。
+        /// </summary>
+        public static DungeonMapGenerator Instance { get; private set; }
+
         private void Awake()
         {
+            if (Instance != null && Instance != this)
+            {
+                // 已经有一个了（正常不会发生），保留旧的
+                Debug.LogWarning("[DungeonMapGenerator] 场景里出现了多个实例，只用第一个。");
+            }
+            else
+            {
+                Instance = this;
+            }
+
             m_Black = MakeBlack();
 
             // 生成出来的东西统一挂在这个节点下
@@ -1933,6 +2073,8 @@ namespace EchoPuzzle.Dungeon
 
         private void OnDestroy()
         {
+            if (Instance == this) Instance = null;
+
             if (m_Black != null) Destroy(m_Black);
         }
 
@@ -2193,6 +2335,24 @@ namespace EchoPuzzle.Dungeon
             if (stones != null) stones.ClearStones();
         }
 
+        /// <summary>当前地图是否已经建出来过（BeginRun 用它判断要不要立刻重建）。</summary>
+        private bool m_Built;
+
+        /// <summary>
+        /// 【新一局开局】设置挑战模式，并保证接下来的建图用的是这套布局。
+        ///
+        /// ★ 给 GameUI 的「普通闯关 / boss挑战」两个按钮调用：
+        ///     · 地图已经建过 -> 立刻按新布局重建一层（层数回到 1）
+        ///     · 地图还没建   -> 只作废布局缓存，让待会儿那次建图直接用新设置
+        /// </summary>
+        public void BeginRun(bool bossChallenge)
+        {
+            BossChallenge = bossChallenge;
+
+            if (m_Built) RebuildStage(advanceStage: false);
+            else         RerollLayout();
+        }
+
         /// <summary>
         /// 清掉旧地图并**重新随机**生成一层。
         ///
@@ -2317,8 +2477,40 @@ namespace EchoPuzzle.Dungeon
             Vector3 playerSpawn = Vector3.zero;
             bool    hasSpawn    = false;
 
+            // ★★ 关键：先把分块布局刷出来，再读 s_Layout ★★
+            //
+            //   以前这里直接读 s_Layout 判断"哪些块是 B"，但 s_Layout 是
+            //   BuildSlots() 里才写好的，而 BuildSlots() 要到下面 GetCell()
+            //   第一次被调用时才跑 —— 也就是说这一句读到的是**上一层的布局**
+            //   （开局第一次更是空的）。
+            //
+            //   结果：boss 挑战第一局，B 块里的 3 全都认不出来，
+            //   MonsterZone 拿到空的 bossCells -> 进 boss 房照样刷普通怪物潮。
+            //   第二局之后 s_Layout 里还留着上一局的 B，所以"只有首次会犯病"。
+            BuildSlots();
+
             // ★ 数字 3 的格子（怪物区地板），建完后交给 MonsterZone
             var monsterCells = new List<Vector2Int>();
+
+            // ★★ boss 房（字母 "B" 的块）★★
+            //
+            //   · bossCells   = B 块里所有 3 的格子（MonsterZone 靠它判断"这片是 boss 区"）
+            //   · bossAnchor  = B 块里**模板第 18 行 18 列**的大矩阵坐标（boss 固定刷在这里）
+            var bossCells  = new List<Vector2Int>();
+            var bossBlocks = new HashSet<Vector2Int>();
+            Vector2Int bossAnchor = new Vector2Int(-1, -1);
+
+            if (s_Layout != null)
+            {
+                foreach (var kv in s_Layout)
+                {
+                    if (kv.Value != "B") continue;
+
+                    bossBlocks.Add(kv.Key);
+                    bossAnchor = new Vector2Int(kv.Key.x * ModuleSize + BossAnchorLocal,
+                                                kv.Key.y * ModuleSize + BossAnchorLocal);
+                }
+            }
 
             // ---- 地板 / 墙 / 出生点 / 下一层 ----
             //
@@ -2346,6 +2538,10 @@ namespace EchoPuzzle.Dungeon
                             SpawnCube(x, floorBottomY, z, floorMaterial);
                             SpawnCube(x, floorTopY,    z, floorMaterial);
                             monsterCells.Add(new Vector2Int(x, z));
+
+                            // ★ boss 房里的 3 单独记一份，怪物潮只刷一只 boss
+                            if (bossBlocks.Contains(new Vector2Int(x / ModuleSize, z / ModuleSize)))
+                                bossCells.Add(new Vector2Int(x, z));
                             break;
 
                         case 5:   // 商店格（第十周任务 3）：地板 + 上下封盖 + 商店触发区
@@ -2398,8 +2594,10 @@ namespace EchoPuzzle.Dungeon
             // ---- 怪物区：把登记到的格子交给 MonsterZone 管理 ----
             if (MonsterZone.Instance != null)
             {
-                MonsterZone.Instance.RegisterCells(monsterCells, cellSize);
+                MonsterZone.Instance.RegisterCells(monsterCells, cellSize, bossCells, bossAnchor);
             }
+
+            m_Built = true;
 
             // ---- ★★ 重新烘焙 NavMesh ★★ ----
             //

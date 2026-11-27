@@ -30,7 +30,7 @@ namespace EchoPuzzle.Dungeon
     {
         [Header("墙体参数")]
         [Tooltip("墙的总血量（玩家子弹伤害会直接扣它）")]
-        [Min(1f)] public float maxHealth = 48f;
+        [Min(1f)] public float maxHealth = 24f;
 
         [Tooltip("★ 墙耐久度每进入新一层的倍率。需求：1.25\n\n" +
                  "★ 第 1 层 ×1.0，第 2 层 ×1.25，第 3 层 ×1.5625 …")]
@@ -241,7 +241,7 @@ namespace EchoPuzzle.Dungeon
         private void UpdateVisual()
         {
             // 血越多越实，血越少越透明（顺便给玩家反馈“快打穿了”）
-            SetAlpha(Mathf.Lerp(0.25f, baseAlpha, Health01));
+            SetAlpha(Mathf.Lerp(0.05f, baseAlpha, Health01));
         }
 
         private void SetAlpha(float a)

@@ -12,7 +12,7 @@ namespace EchoPuzzle.Dungeon
     ///     · new GameObject("DungeonBullet") + DungeonBullet 组件
     ///     · new GameObject("BulletTrailMesh") + MeshFilter + MeshRenderer
     ///     · new Mesh() + 4 个大数组（约 107 KB）
-    ///   射速 4 发/秒 -> 每秒约 430 KB 托管堆分配 + 每发一个独立 draw call。
+    ///   射速 2 发/秒（fireInterval = 0.5）-> 每秒约 215 KB 托管堆分配 + 每发一个独立 draw call。
     ///
     ///   现在：
     ///     · 每发子弹只是一个 <see cref="Shot"/>（纯数据，无 GameObject）
@@ -438,8 +438,19 @@ namespace EchoPuzzle.Dungeon
                 //   所以反弹回来再打中同一只怪，会再造成一次伤害。
                 if (s.hitMonsters != null && s.hitMonsters.Contains(mon.GetInstanceID())) continue;
 
+                // ★ 单只怪的受击范围覆盖：boss 球半径 1.5，
+                //   普通怪的圆柱半径是 1 米、boss 是 2 米；
+                //   高度上 boss 球心在 4 米，所以单独给 8 米高的圆柱。
+                float radius     = mon.dungeonHurtRadius > 0.01f
+                                 ? mon.dungeonHurtRadius
+                                 : s.hurtRadius;
+
+                float halfHeight = mon.dungeonHurtHeight > 0.01f
+                                 ? mon.dungeonHurtHeight * 0.5f
+                                 : s.hurtHeight * 0.5f;
+
                 if (!SegmentHitsCylinder(a, b, mon.transform.position,
-                                         s.hurtRadius, s.hurtHeight * 0.5f, out float t))
+                                         radius, halfHeight, out float t))
                     continue;
 
                 if (t < best) { best = t; bestMon = mon; }
@@ -507,7 +518,7 @@ namespace EchoPuzzle.Dungeon
         /// 范围伤害：以命中点为圆心，把半径内的**其它**怪物也打一遍（第十周任务 4）。
         ///
         /// ★ 主目标已经在外面按全额伤害处理过了，这里排除它，避免一枪打两次。
-        /// ★ 溅射伤害取主伤害的 60% —— 全额的话"爆炸弹头"会直接取代单体输出。
+        /// ★ 溅射伤害取主伤害的 80%（代码里是 s.damage * 0.8f）—— 全额的话"爆炸弹头"会直接取代单体输出。
         /// </summary>
         private static void ApplyAoeDamage(PuzzleMonster primary, Vector3 center, Shot s)
         {

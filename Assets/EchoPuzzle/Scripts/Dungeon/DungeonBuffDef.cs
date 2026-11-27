@@ -55,6 +55,19 @@ namespace EchoPuzzle.Dungeon
         /// <summary>最多能叠几层。</summary>
         [Min(1)] public int maxStacks = 5;
 
+        // ---- 第十一周任务：颜色体系 ----
+
+        [Tooltip("插件颜色。必须插进同颜色的槽位才生效")]
+        public PluginColor color = PluginColor.White;
+
+        [Tooltip("效果标识：跨颜色共用。紫爆炸弹头 + 橙爆炸弹头 -> 同一个效果、等级相加")]
+        public string effectId = "";
+
+        [Tooltip("效果名（**不含颜色前缀**）。\n\n" +
+                 "★ 给 HUD 汇总用：紫爆炸弹头 + 橙爆炸弹头 -> 显示「爆炸弹头 lv2」。\n" +
+                 "★ 和 name 的区别：name 是「紫·爆炸弹头（蓝耗*1.5）」，带颜色和数值。")]
+        public string effectName = "";
+
         // ---- 效果（乘区）----
 
         /// <summary>伤害倍率。</summary>
@@ -144,7 +157,9 @@ namespace EchoPuzzle.Dungeon
     /// </summary>
     public static class DungeonBuffPool
     {
-        public static readonly List<DungeonBuffDef> All = new List<DungeonBuffDef>
+        // ⚠️ 第十一周起停用：这套无颜色的旧池子由下面的彩色插件池取代。
+        //   先留着（里面的中文描述和数值是历史记录），确认新池子跑通后再整块删掉。
+        private static readonly List<DungeonBuffDef> LegacyUnused = new List<DungeonBuffDef>
         {
             // ══════════════════════════════════════════════════════
             //   第十周任务书里点名的效果，必须全部存在：
@@ -239,6 +254,154 @@ namespace EchoPuzzle.Dungeon
             },
         };
 
+        // ══════════════════════════════════════════════════════════════
+        //   第十一周：六色插件池
+        // ══════════════════════════════════════════════════════════════
+        //
+        //   白 / 绿 / 蓝 / 红 = 纯数值插件（伤害 / 射速 / 蓝耗 各一条）
+        //   紫 / 橙         = 五个机制插件（爆炸弹头 / 霰弹 / 连发 / 跳弹 / 穿甲）
+        //
+        //   ★ 紫插件额外 ×1.5 蓝耗，橙插件没有额外蓝耗 —— 这是"想要机制就得付出"。
+        //   ★ 同效果跨颜色的等级合并靠 effectId（"aoe" / "shotgun" / "volley" / "bounce" / "pierce"），
+        //     所以不管紫的还是橙的爆炸弹头，装两个就是 Lv2。
+        //   ★ maxStacks = 该颜色"同效果最多能拿几个"：
+        //       白 3、绿 2、蓝 1、紫 1、橙 2、红 无限（用 99 表示）
+        public static readonly List<DungeonBuffDef> All = BuildColoredPool();
+
+        private static List<DungeonBuffDef> BuildColoredPool()
+        {
+            var list = new List<DungeonBuffDef>(32);
+
+            // ---- 纯数值：白 / 绿 / 蓝 / 红 ----
+            AddStatTrio(list, PluginColor.White,  "白", 1.5f,  1.8f,  0.6f,  3);
+            AddStatTrio(list, PluginColor.Green,  "绿", 1.75f, 2.25f, 0.45f, 2);
+            AddStatTrio(list, PluginColor.Blue,   "蓝", 2.25f, 3.24f, 0.36f, 1);
+            AddStatTrio(list, PluginColor.Red,    "红", 0.9f,  0.8f,  1.5f,  99);
+
+            // ---- 机制：紫（蓝耗 ×1.5）/ 橙（不额外加蓝耗）----
+            AddMechanicSet(list, PluginColor.Purple, "紫", 1.5f, 1);
+            AddMechanicSet(list, PluginColor.Orange, "橙", 1f,   2);
+
+            return list;
+        }
+
+        /// <summary>
+        /// 一条颜色的「伤害 / 射速 / 蓝耗」三件套。
+        ///
+        /// ★ 名字里带上数值，例：「白·伤害*1.5」「红·射速*0.8」。
+        ///   （在原来的 prefix + "·XXX" 后面直接再拼一段，不改原结构）
+        /// </summary>
+        private static void AddStatTrio(List<DungeonBuffDef> list, PluginColor color, string prefix,
+                                        float dmg, float rate, float mana, int max)
+        {
+            string tag = $"{(int)color}";
+
+            list.Add(new DungeonBuffDef
+            {
+                id = tag + "-dmg", effectId = "dmg", color = color,
+                effectName = "伤害",
+                name = prefix + "·伤害*" + dmg.ToString("0.##"),
+                desc = $"伤害 ×{dmg:0.##}\n（{SlotRules.NameOf(color)}插件）",
+                weight = 10f, maxStacks = max,
+                damageMul = dmg,
+            });
+
+            list.Add(new DungeonBuffDef
+            {
+                id = tag + "-rate", effectId = "rate", color = color,
+                effectName = "射速",
+                name = prefix + "·射速*" + rate.ToString("0.##"),
+                desc = $"射速 ×{rate:0.##}\n（{SlotRules.NameOf(color)}插件）",
+                weight = 10f, maxStacks = max,
+                fireRateMul = rate,
+            });
+
+            list.Add(new DungeonBuffDef
+            {
+                id = tag + "-mana", effectId = "mana", color = color,
+                effectName = "蓝耗",
+                name = prefix + "·蓝耗*" + mana.ToString("0.##"),
+                desc = $"蓝耗 ×{mana:0.##}\n（{SlotRules.NameOf(color)}插件）",
+                weight = 10f, maxStacks = max,
+                manaCostMul = mana,
+            });
+        }
+
+        /// <summary>
+        /// 一条颜色的五个机制插件。
+        ///
+        /// ★ 名字后面带上蓝耗倍率，例：「紫·爆炸弹头（蓝耗*1.5）」。
+        ///   橙色没有额外蓝耗（manaMul = 1），所以**不加**这个后缀。
+        ///   （在原来的 prefix + "·XXX" 后面直接再拼一段，不改原结构）
+        /// </summary>
+        private static void AddMechanicSet(List<DungeonBuffDef> list, PluginColor color, string prefix,
+                                           float manaMul, int max)
+        {
+            string tag  = $"{(int)color}";
+            string cost = manaMul > 1.0001f ? $"\n蓝耗 ×{manaMul:0.##}" : "";
+            string kind = SlotRules.NameOf(color);
+
+            // ★ 名字后缀：蓝耗 > 1 才加，格式「（蓝耗*1.5）」
+            string nameSuffix = manaMul > 1.0001f ? $"（蓝耗*{manaMul:0.##}）" : "";
+
+            list.Add(new DungeonBuffDef
+            {
+                id = tag + "-aoe", effectId = "aoe", color = color,
+                effectName = "爆炸弹头",
+                name = prefix + "·爆炸弹头" + nameSuffix,
+                desc = "子弹命中怪物或墙壁时爆炸，\n范围内的其它怪物受到伤害。" + cost,
+                weight = 10f, maxStacks = max,
+                manaCostMul = manaMul,
+            });
+
+            list.Add(new DungeonBuffDef
+            {
+                id = tag + "-shotgun", effectId = "shotgun", color = color,
+                effectName = "霰弹改造",
+                name = prefix + "·霰弹改造" + nameSuffix,
+                desc = "开火时额外发射 2 颗子弹，呈扇形铺开。\n再装一份，扇形更宽。" + cost,
+                weight = 10f, maxStacks = max,
+                extraPellets = 2,
+                manaCostMul  = manaMul,
+                bulletSpreadMul = 1.15f,
+            });
+
+            list.Add(new DungeonBuffDef
+            {
+                id = tag + "-volley", effectId = "volley", color = color,
+                effectName = "连发装置",
+                name = prefix + "·连发装置" + nameSuffix,
+                desc = "每次单击额外开火一轮。" + cost,
+                weight = 10f, maxStacks = max,
+                extraVolleys = 1,
+                manaCostMul  = manaMul,
+            });
+
+            list.Add(new DungeonBuffDef
+            {
+                id = tag + "-bounce", effectId = "bounce", color = color,
+                effectName = "跳弹",
+                name = prefix + "·跳弹" + nameSuffix,
+                desc = "子弹撞墙后反弹，每份多弹一次。" + cost,
+                weight = 10f, maxStacks = max,
+                bounceAdd   = 1,
+                manaCostMul = manaMul,
+            });
+
+            list.Add(new DungeonBuffDef
+            {
+                id = tag + "-pierce", effectId = "pierce", color = color,
+                effectName = "穿甲弹",
+                name = prefix + "·穿甲弹" + nameSuffix,
+                desc = "子弹命中敌人时穿过它继续飞，每份多穿一只。" + cost,
+                weight = 10f, maxStacks = max,
+                pierceAdd   = 1,
+                manaCostMul = manaMul,
+            });
+
+            _ = kind;
+        }
+
         /// <summary>
         /// 抽 <paramref name="count"/> 条**互不相同**的 buff。
         /// 已经叠满的（达到 maxStacks）不会再出现。
@@ -248,36 +411,98 @@ namespace EchoPuzzle.Dungeon
             var result = new List<DungeonBuffDef>(count);
             if (count <= 0) return result;
 
-            // 候选：过滤掉叠满的
-            var candidates = new List<DungeonBuffDef>(All.Count);
+            // ★ 第十一周：三选一只出白 / 绿 / 紫，颜色概率 6 : 2 : 1
+            //   蓝插件是"模板升到紫色时三选一"，橙插件只从商店出，红色也只能商店买
+            var byColor = new List<DungeonBuffDef>[3];
+            for (int c = 0; c < 3; c++) byColor[c] = new List<DungeonBuffDef>();
+
             for (int i = 0; i < All.Count; i++)
             {
                 DungeonBuffDef d = All[i];
                 if (d == null) continue;
+
+                int ci = ColorIndexForPick(d.color);
+                if (ci < 0) continue;
+
+                // 达到"这个颜色同效果最多几个"就不再出现
                 if (state != null && state.StacksOf(d) >= d.maxStacks) continue;
-                candidates.Add(d);
+
+                byColor[ci].Add(d);
             }
 
-            for (int n = 0; n < count && candidates.Count > 0; n++)
+            for (int n = 0; n < count; n++)
             {
-                // 加权随机挑一条，挑完移出候选，保证三张不重复
                 float total = 0f;
-                for (int i = 0; i < candidates.Count; i++) total += Mathf.Max(0.01f, candidates[i].weight);
+                for (int c = 0; c < 3; c++)
+                    if (byColor[c].Count > 0) total += PickWeights[c];
+
+                if (total <= 0f) break;      // 三色都抽干了
 
                 float pick = Random.value * total;
-                int chosen = candidates.Count - 1;
+                int chosenColor = -1;
 
-                for (int i = 0; i < candidates.Count; i++)
+                for (int c = 0; c < 3; c++)
                 {
-                    pick -= Mathf.Max(0.01f, candidates[i].weight);
-                    if (pick <= 0f) { chosen = i; break; }
+                    if (byColor[c].Count == 0) continue;
+
+                    pick -= PickWeights[c];
+                    if (pick <= 0f) { chosenColor = c; break; }
                 }
 
-                result.Add(candidates[chosen]);
-                candidates.RemoveAt(chosen);
+                // 浮点误差兜底
+                if (chosenColor < 0)
+                    for (int c = 2; c >= 0; c--)
+                        if (byColor[c].Count > 0) { chosenColor = c; break; }
+
+                var list = byColor[chosenColor];
+
+                int idx = WeightedIndex(list);
+                result.Add(list[idx]);
+                list.RemoveAt(idx);          // 保证三张不重复
             }
 
             return result;
+        }
+
+        /// <summary>三选一的颜色权重：白 6、绿 2、紫 1。</summary>
+        public static readonly float[] PickWeights = { 6f, 2f, 1f };
+
+        private static int ColorIndexForPick(PluginColor c)
+        {
+            switch (c)
+            {
+                case PluginColor.White:  return 0;
+                case PluginColor.Green:  return 1;
+                case PluginColor.Purple: return 2;
+                default:                 return -1;      // 蓝 / 橙 / 红 不进三选一
+            }
+        }
+
+        private static int WeightedIndex(List<DungeonBuffDef> list)
+        {
+            float total = 0f;
+            for (int i = 0; i < list.Count; i++) total += Mathf.Max(0.01f, list[i].weight);
+
+            float pick = Random.value * total;
+
+            for (int i = 0; i < list.Count; i++)
+            {
+                pick -= Mathf.Max(0.01f, list[i].weight);
+                if (pick <= 0f) return i;
+            }
+
+            return list.Count - 1;
+        }
+
+        /// <summary>取某个颜色的全部定义（蓝插件三选一、商店橙插件用）。</summary>
+        public static List<DungeonBuffDef> ByColor(PluginColor color)
+        {
+            var list = new List<DungeonBuffDef>(8);
+
+            for (int i = 0; i < All.Count; i++)
+                if (All[i] != null && All[i].color == color) list.Add(All[i]);
+
+            return list;
         }
     }
 }

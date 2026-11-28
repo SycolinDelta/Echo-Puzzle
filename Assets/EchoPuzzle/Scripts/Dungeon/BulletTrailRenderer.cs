@@ -475,11 +475,18 @@ namespace EchoPuzzle.Dungeon
             // ★ 范围伤害（第十周任务 4）：命中点周围的其它怪物也吃伤害
             //
             //   ★ 有爆炸弹头时额外铺一个和爆炸范围一样大的圆形（纯视觉）。
+            var hitTargets = new List<PuzzleMonster> { bestMon };
+
             if (s.aoeRadius > 0.01f)
             {
                 BulletBlastRenderer.Spawn(hitPoint, s.aoeRadius, s.color);
-                ApplyAoeDamage(bestMon, hitPoint, s);
+                List<PuzzleMonster> splashed = ApplyAoeDamage(bestMon, hitPoint, s);
+                if (splashed != null) hitTargets.AddRange(splashed);
             }
+
+            // 血条蹦迪：整次命中只掷一次骰子（内置 CD 也在这里判定）
+            var dance = DungeonHealthDanceSkill.Instance;
+            if (dance != null) dance.OnPlayerAttack(hitTargets);
 
             // 这一发把它打死了 -> 回蓝
             if (!wasDead && bestMon.DungeonIsDead && s.manaRestore > 0)
@@ -520,13 +527,15 @@ namespace EchoPuzzle.Dungeon
         /// ★ 主目标已经在外面按全额伤害处理过了，这里排除它，避免一枪打两次。
         /// ★ 溅射伤害取主伤害的 80%（代码里是 s.damage * 0.8f）—— 全额的话"爆炸弹头"会直接取代单体输出。
         /// </summary>
-        private static void ApplyAoeDamage(PuzzleMonster primary, Vector3 center, Shot s)
+        private static List<PuzzleMonster> ApplyAoeDamage(PuzzleMonster primary, Vector3 center, Shot s)
         {
             RefreshMonsters();
-            if (s_Monsters == null) return;
+            if (s_Monsters == null) return null;
 
             float r2  = s.aoeRadius * s.aoeRadius;
             float dmg = s.damage * 0.8f;
+
+            List<PuzzleMonster> damaged = new List<PuzzleMonster>();
 
             for (int i = 0; i < s_Monsters.Length; i++)
             {
@@ -551,7 +560,11 @@ namespace EchoPuzzle.Dungeon
                 //   ★ 位置用怪物身上的随机点，而不是爆炸中心 ——
                 //     看起来才像是"这只怪被炸到了"。
                 BloodSplashSonar.Emit(RandomPointOnMonster(mon), s.dir);
+
+                damaged.Add(mon);
             }
+
+            return damaged;
         }
 
         /// <summary>

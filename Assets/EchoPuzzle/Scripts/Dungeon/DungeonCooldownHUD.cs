@@ -123,14 +123,28 @@ namespace EchoPuzzle.Dungeon
             float shoutX = w - marginRight - size.x;
             float dodgeX = shoutX - slotGap - size.x;
 
-            // ★★ 闪避改成充能制：填充高度 = 能量比例 ★★
-            DrawChargeSlot(new Rect(dodgeX, baseY, size.x, size.y),
-                           "闪避", "Alt",
-                           m_Player.DodgeEnergy01,
-                           m_Player.DodgeEnergy,
-                           m_Player.DodgeEnergyMax,
-                           m_Player.DodgeReady,
-                           m_Player.IsDodging);
+            // ★★ 左 Alt 技能格：血条蹦迪（充能 0~15）或原来的闪避（充能秒数）★★
+            var dance = DungeonHealthDanceSkill.Instance;
+
+            if (dance != null && DungeonHealthDanceSkill.IsSelected)
+            {
+                DrawChargeSlot(new Rect(dodgeX, baseY, size.x, size.y),
+                               "血条蹦迪", "Alt",
+                               dance.Charges / 15f,
+                               dance.Charges, 15f,
+                               dance.Charges >= 5,
+                               false);
+            }
+            else
+            {
+                DrawChargeSlot(new Rect(dodgeX, baseY, size.x, size.y),
+                               "闪避", "Alt",
+                               m_Player.DodgeEnergy01,
+                               m_Player.DodgeEnergy,
+                               m_Player.DodgeEnergyMax,
+                               m_Player.DodgeReady,
+                               m_Player.IsDodging);
+            }
 
             DrawSlot(new Rect(shoutX, baseY, size.x, size.y),
                      "声波", "空格",

@@ -421,7 +421,10 @@ namespace EchoPuzzle.Dungeon
                 float scale = 1f;
                 for (int i = 1; i < stage; i++) scale *= handBladeDamagePerStage;
 
-                return Mathf.Max(1, Mathf.RoundToInt(handBladeDamage * scale));
+                var dance = DungeonHealthDanceSkill.Instance;
+                float mul = dance != null ? dance.DamageMultiplier : 1f;
+
+                return Mathf.Max(1, Mathf.RoundToInt(handBladeDamage * scale * mul));
             }
         }
 
@@ -471,7 +474,17 @@ namespace EchoPuzzle.Dungeon
         /// ★★ 保留三位小数 ★★
         /// </summary>
         public float EffectiveDamage
-            => Round3(Mathf.Max(0.001f, damage * Mul(s => s.DamageMul) * OverflowDamageMul));
+        {
+            get
+            {
+                float v = damage * Mul(s => s.DamageMul) * OverflowDamageMul;
+
+                var dance = DungeonHealthDanceSkill.Instance;
+                if (dance != null) v *= dance.DamageMultiplier;
+
+                return Round3(Mathf.Max(0.001f, v));
+            }
+        }
 
         /// <summary>
         /// 含 buff 后的击杀回蓝。
@@ -1453,6 +1466,7 @@ namespace EchoPuzzle.Dungeon
             // ---- 1) 伤害扇形内的怪物 ----
             bool hitAny = false;
 
+            var hitMonsters = new List<PuzzleMonster>();
             PuzzleMonster[] monsters = FindObjectsOfType<PuzzleMonster>(true);
 
             for (int i = 0; i < monsters.Length; i++)
@@ -1501,8 +1515,13 @@ namespace EchoPuzzle.Dungeon
                 //     每次血花都开在同一个位置，看得出是"贴图"。
                 BloodSplashSonar.Emit(BulletTrailRenderer.RandomPointOnMonster(mon), dir);
 
+                hitMonsters.Add(mon);
                 hitAny = true;
             }
+
+            // 血条蹦迪：整次手刀只掷一次骰子
+            var dance = DungeonHealthDanceSkill.Instance;
+            if (dance != null) dance.OnPlayerAttack(hitMonsters);
 
             // ---- 2) ★ 打怪物技能墙 ★ ----
             //

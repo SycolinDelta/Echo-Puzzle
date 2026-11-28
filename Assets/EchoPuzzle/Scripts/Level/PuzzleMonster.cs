@@ -1361,6 +1361,18 @@ namespace EchoPuzzle
         /// ★ 已经死了再打也无效。
         /// ★★ 伤害 / 血量都是 float，保留三位小数 ★★
         /// </summary>
+        /// <summary>当前能否真正吃到伤害（刷出停顿期间无敌）。</summary>
+        public bool DungeonIsDamageable
+        {
+            get
+            {
+                if (DungeonIsDead) return false;
+
+                if (m_DungeonEnemy == null) m_DungeonEnemy = GetComponent<Dungeon.DungeonEnemy>();
+                return m_DungeonEnemy == null || !m_DungeonEnemy.IsSpawnInvulnerable;
+            }
+        }
+
         public void DungeonTakeDamage(float amount)
         {
             if (!GameUI.IsDungeonMode) return;
@@ -1422,6 +1434,10 @@ namespace EchoPuzzle
             //   不管是子弹打死的、手刀砍死的，还是以后的其它伤害，都算一次击杀。
             if (Dungeon.DungeonCurrency.Instance != null)
                 Dungeon.DungeonCurrency.Instance.OnMonsterKilled();
+
+            // ★ 血条蹦迪：击杀充能（选中该技能时才会累加）
+            var dance = Dungeon.DungeonHealthDanceSkill.Instance;
+            if (dance != null) dance.OnMonsterKilled();
 
 
             // ★★ 死亡表现和探秘模式一致 ★★

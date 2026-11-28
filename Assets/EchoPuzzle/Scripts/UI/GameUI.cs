@@ -9,6 +9,7 @@ namespace EchoPuzzle
     {
         ModeSelect, // 主页：选「探秘模式 / 地牢模式」（只在 Home 场景里用）
         Home,       // 关卡内的开局菜单
+        Preparation, // 战前准备：血量/护盾上限 + 主动技能二选一
         DifficultyMenu, // 暂停菜单里点"降低难度"后的子界面
         Playing,    // 进行中
         Paused,     // 暂停
@@ -1700,6 +1701,10 @@ namespace EchoPuzzle
             var health = FindObjectOfType<EchoPuzzle.Dungeon.PlayerHealth>();
             if (health != null) health.ResetHealth();
 
+            // ---- 血条蹦迪：充能和骰子 CD 归零 ----
+            var dance = EchoPuzzle.Dungeon.DungeonHealthDanceSkill.Instance;
+            if (dance != null) dance.ResetRun();
+
             // ---- 怪物房状态：清掉"已经打过"的标记 ----
             //
             // ★ m_Consumed 记录哪些区域已经被清完。重开一局要全部作废，
@@ -1902,6 +1907,7 @@ namespace EchoPuzzle
                 case GameState.ModeSelect:     DrawModeSelect(cx, w);     break;
                 case GameState.DifficultyMenu: DrawDifficultyMenu(cx, w); break;
                 case GameState.Home:   DrawHome(cx, w);         break;
+                case GameState.Preparation: DrawPreparation(cx, w); break;
                 case GameState.Paused: DrawPause(cx, w);        break;
                 case GameState.Won:    DrawWin(cx, w);          break;
                 case GameState.Dead:   DrawLose(cx, w);         break;
@@ -2230,10 +2236,11 @@ namespace EchoPuzzle
             //               a11=Z / a21=B / a31=Y
             if (IsDungeonMode)
             {
-                if (DrawButton("普通闯关", cx, w, y)) BeginDungeonRun(false);
+                // ★ 两种模式都先进入战前准备界面，确认配置后才真正开局
+                if (DrawButton("普通闯关", cx, w, y)) EnterPreparation(false);
                 y += buttonSpacing;
 
-                if (DrawButton("boss挑战", cx, w, y)) BeginDungeonRun(true);
+                if (DrawButton("boss挑战", cx, w, y)) EnterPreparation(true);
                 y += buttonSpacing;
             }
             else
@@ -2252,6 +2259,98 @@ namespace EchoPuzzle
             }
 
             if (DrawButton("返回主页", cx, w, y)) ReturnHome();
+        }
+
+        // ------------------------------------------------------------------ 战前准备
+
+        private bool m_PrepBoss;
+        private int  m_PrepShieldDelta;
+        private EchoPuzzle.Dungeon.DungeonActiveSkill m_PrepSkill =
+            EchoPuzzle.Dungeon.DungeonActiveSkill.Dodge;
+
+        private void EnterPreparation(bool bossChallenge)
+        {
+            m_PrepBoss = bossChallenge;
+            m_PrepShieldDelta = Mathf.Clamp(
+                EchoPuzzle.Dungeon.DungeonPreparation.ShieldCap
+                - EchoPuzzle.Dungeon.DungeonPreparation.BaseShield, -2, 2);
+            m_PrepSkill = EchoPuzzle.Dungeon.DungeonPreparation.ActiveSkill;
+
+            s_State = GameState.Preparation;
+            Time.timeScale = 0f;
+            UnlockCursor();
+            SetWorldVisible(false);
+        }
+
+        /// <summary>战前准备界面：调生命/护盾上限，并从两个主动技能里选一个（左 Alt 释放）。</summary>
+        private void DrawPreparation(float cx, float w)
+        {
+            float y = titleTop;
+
+            DrawTitle("战前准备", cx, w, y);
+            y += titleToButtons;
+
+            DrawLabel($"生命上限 {EchoPuzzle.Dungeon.DungeonPreparation.BaseHealth - 3 * m_PrepShieldDelta}" +
+                      $"    护盾上限 {EchoPuzzle.Dungeon.DungeonPreparation.BaseShield + m_PrepShieldDelta}" +
+                      (m_PrepBoss ? "    （boss挑战）" : "    （普通闯关）"), cx, w, y);
+            y += 70f;
+
+            DrawLabel("每 -3 生命换 +1 护盾；每 -1 护盾换 +3 生命（护盾最多 ±2）", cx, w, y);
+            y += 66f;
+
+            const float bw = 280f;
+            if (DrawSmallButton("+1 护盾（-3 生命）", cx - bw - 20f, y, bw) &&
+                m_PrepShieldDelta < EchoPuzzle.Dungeon.DungeonPreparation.MaxShieldChange)
+                m_PrepShieldDelta++;
+
+            if (DrawSmallButton("-1 护盾（+3 生命）", cx + 20f, y, bw) &&
+                m_PrepShieldDelta > -EchoPuzzle.Dungeon.DungeonPreparation.MaxShieldChange)
+                m_PrepShieldDelta--;
+
+            y += 86f;
+
+            DrawLabel("固定技能：空格 声波（不可移除）", cx, w, y);
+            y += 60f;
+
+            DrawLabel("主动技能（左 Alt 释放，二选一）", cx, w, y);
+            y += 66f;
+
+            if (DrawSmallButton("闪避", cx - bw - 20f, y, bw))
+                m_PrepSkill = EchoPuzzle.Dungeon.DungeonActiveSkill.Dodge;
+
+            if (DrawSmallButton("血条蹦迪", cx + 20f, y, bw))
+                m_PrepSkill = EchoPuzzle.Dungeon.DungeonActiveSkill.HealthDance;
+
+            y += 86f;
+
+            DrawLabel("当前选择：" + (m_PrepSkill == EchoPuzzle.Dungeon.DungeonActiveSkill.Dodge
+                        ? "闪避" : "血条蹦迪"), cx, w, y);
+            y += 66f;
+
+            if (DrawButton("开始闯关", cx, w, y))
+            {
+                EchoPuzzle.Dungeon.PlayerHealth health = FindObjectOfType<EchoPuzzle.Dungeon.PlayerHealth>();
+                if (health != null)
+                {
+                    health.maxHealth = EchoPuzzle.Dungeon.DungeonPreparation.BaseHealth - 3 * m_PrepShieldDelta;
+                    health.maxShield = EchoPuzzle.Dungeon.DungeonPreparation.BaseShield + m_PrepShieldDelta;
+                    health.SetHealth(health.maxHealth);
+                    health.SetShield(health.maxShield);
+                }
+
+                EchoPuzzle.Dungeon.DungeonPreparation.Configure(m_PrepShieldDelta, m_PrepSkill);
+                BeginDungeonRun(m_PrepBoss);
+            }
+            y += buttonSpacing;
+
+            if (DrawButton("返回", cx, w, y)) EnterHome();
+        }
+
+        private bool DrawSmallButton(string text, float x, float y, float bw)
+        {
+            bool clicked = GUI.Button(new Rect(x, y, bw, 56f), text, m_ButtonStyle);
+            if (clicked) AudioSystem.Play(AudioSystem.Cue.Click);
+            return clicked;
         }
 
         /// <summary>

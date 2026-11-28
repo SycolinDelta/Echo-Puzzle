@@ -842,6 +842,17 @@ namespace EchoPuzzle
             if (!GameUI.IsDungeonMode) return;
             if (!GameUI.PlayerControllable) return;
 
+            // ★ 战前准备选了「血条蹦迪」时，左 Alt 改为释放它的主动回血，闪避不再触发
+            if (EchoPuzzle.Dungeon.DungeonPreparation.IsHealthDance)
+            {
+                if (Input.GetKeyDown(dungeonDodgeKey))
+                {
+                    var dance = EchoPuzzle.Dungeon.DungeonHealthDanceSkill.Instance;
+                    if (dance != null) dance.TryActivate();
+                }
+                return;
+            }
+
             float now = Time.timeSinceLevelLoad;
 
             // ---- 1) 按下键：开始闪避（只要能量 >= 最小消耗）----
